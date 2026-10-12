@@ -395,6 +395,106 @@ async def toggle_symbol(
 
 
 # --------------------------------------------------------------------------- #
+# NEWS BIAS ENGINE (confirm-gated; kill switch overrides)
+# --------------------------------------------------------------------------- #
+def _news_bias(engine: TradingEngine):
+    nb = getattr(engine, "news_bias", None)
+    if nb is None or not nb.config.enabled:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "News bias engine is disabled")
+    return nb
+
+
+@app.get("/api/v1/news-events/upcoming")
+async def news_events_upcoming(s: UserSession = Depends(current_user),
+                               engine: TradingEngine = Depends(get_engine)) -> list[dict]:
+    """Next high-impact events with the current bias + plan state per symbol."""
+    nb = _news_bias(engine)
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    events = await nb.upcoming_events(now)
+    out = []
+    for ev in events[:8]:
+        entry = {
+            "event_key": ev.key, "event_type": ev.event_type, "title": ev.title,
+            "event_time": ev.time.isoformat(), "currency": ev.currency, "impact": ev.impact,
+            "forecast": ev.forecast, "previous": ev.previous,
+            "symbols": [],
+        }
+        for symbol, plan in nb.all_plans().get(ev.key, {}).items():
+            entry["symbols"].append({
+                "symbol": symbol,
+                "direction": plan["direction"],
+                "status": plan["status"],
+                "dry_run": plan.get("dry_run", True),
+                "achieved_target_zar": plan.get("achieved_target_zar"),
+                "target_level": plan.get("target_level"),
+                "feasibility": plan.get("feasibility_json", {}),
+                "orders": plan.get("plan_json", {}).get("orders", []),
+                "confirmed": nb.is_confirmed(ev.key, symbol),
+                "skipped": nb.is_skipped(ev.key, symbol),
+            })
+        out.append(entry)
+    return out
+
+
+@app.get("/api/v1/news-events/{event_key}/plan")
+async def news_event_plan(event_key: str, symbol: str, s: UserSession = Depends(current_user),
+                          engine: TradingEngine = Depends(get_engine)) -> dict:
+    nb = _news_bias(engine)
+    plan = nb.plan_for(event_key, symbol)
+    if not plan:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No plan for this event/symbol")
+    return {
+        "event_key": event_key, "symbol": symbol, "direction": plan["direction"],
+        "status": plan["status"], "dry_run": plan.get("dry_run", True),
+        "target_zar": plan.get("target_zar"), "target_level": plan.get("target_level"),
+        "total_lots": plan.get("total_lots"), "required_margin": plan.get("required_margin"),
+        "achieved_target_zar": plan.get("achieved_target_zar"),
+        "feasibility": plan.get("feasibility_json", {}),
+        "orders": plan.get("plan_json", {}).get("orders", []),
+        "confirmed": nb.is_confirmed(event_key, symbol),
+        "skipped": nb.is_skipped(event_key, symbol),
+    }
+
+
+@app.post("/api/v1/news-events/{event_key}/confirm")
+async def news_event_confirm(event_key: str, symbol: str, s: UserSession = Depends(current_user),
+                             engine: TradingEngine = Depends(get_engine)) -> dict:
+    nb = _news_bias(engine)
+    if not eng.is_auto_trading_enabled():
+        raise HTTPException(status.HTTP_409_CONFLICT, "Kill switch is active; cannot place orders")
+    result = await nb.confirm(event_key, symbol)
+    return {"event_key": event_key, "symbol": symbol, "result": result}
+
+
+@app.post("/api/v1/news-events/{event_key}/skip")
+async def news_event_skip(event_key: str, symbol: str, s: UserSession = Depends(current_user),
+                          engine: TradingEngine = Depends(get_engine)) -> dict:
+    nb = _news_bias(engine)
+    result = await nb.skip(event_key, symbol)
+    return {"event_key": event_key, "symbol": symbol, "result": result}
+
+
+@app.get("/api/v1/news-events/history")
+async def news_events_history(s: UserSession = Depends(current_user),
+                              engine: TradingEngine = Depends(get_engine)) -> dict:
+    """Running prediction accuracy + recent event history for calibration."""
+    nb = _news_bias(engine)
+    if not engine.db.pool:
+        return {"accuracy": {"correct": 0, "total": 0, "accuracy": 0.0}, "recent": []}
+    from news_bias import store
+    async with engine.db.pool.acquire() as con:
+        accuracy = await store.prediction_accuracy(con)
+        rows = await con.fetch(
+            """SELECT event_type, event_time, symbol, direction, probability_pct,
+                      actual_direction, correct
+               FROM event_predictions WHERE correct IS NOT NULL
+               ORDER BY event_time DESC LIMIT 25""")
+    return {"accuracy": accuracy,
+            "recent": [dict(r) for r in rows]}
+
+
+# --------------------------------------------------------------------------- #
 # GLOBAL KILL-SWITCH
 # --------------------------------------------------------------------------- #
 @app.post("/api/v1/system/emergency-shutdown", response_model=ShutdownResponse)
