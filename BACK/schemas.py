@@ -158,6 +158,9 @@ class StrategyConfig(BaseModel):
     symbols: list[Symbol] = Field(default_factory=lambda: [
         Symbol.US30, Symbol.XAUUSD, Symbol.XAGUSD, Symbol.BTCUSD,
         Symbol.EURUSD, Symbol.GBPUSD, Symbol.EURGBP,
+        Symbol.USDJPY, Symbol.USDCHF, Symbol.AUDUSD, Symbol.USDCAD, Symbol.NZDUSD,
+        Symbol.EURJPY, Symbol.GBPJPY, Symbol.US100, Symbol.US500, Symbol.GER40,
+        Symbol.USOIL, Symbol.ETHUSD,
     ])
     pinned_symbols: list[Symbol] = Field(default_factory=list)
     symbol_map: dict[str, str] = Field(
