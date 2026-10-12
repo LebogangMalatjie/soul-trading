@@ -20,7 +20,10 @@ class USDCHFStrategy:
         average = ema(values, 50)
         if len(values) < 60 or not average or volatility <= 0:
             return None
-        if abs(average[-1] - average[-6]) > volatility * 0.6:
+        # Trend guard: skip when the 50-EMA slope over the last 5 bars is strong
+        # (a trending market is a poor mean-reversion candidate). 1.0x ATR keeps the
+        # filter from suppressing genuine Bollinger+RSI reversion in mild drift.
+        if abs(average[-1] - average[-6]) > volatility * 1.0:
             return None
         close = values[-1]
         if close < lower and rsi(values) < 30:

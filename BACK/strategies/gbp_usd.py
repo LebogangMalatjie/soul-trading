@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from datetime import timezone
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from strategies.base import StrategySignal, atr
+
+_LONDON = ZoneInfo("Europe/London")
 
 
 class GBPUSDStrategy:
@@ -18,10 +21,15 @@ class GBPUSDStrategy:
         volatility = atr(data)
         if len(candles) < 25 or volatility <= 0 or now is None:
             return None
-        now = now.astimezone(timezone.utc)
-        session_range = [bar for bar in candles if bar["time"].astimezone(timezone.utc).date() == now.date()
-                        and 7 <= bar["time"].astimezone(timezone.utc).hour < 8]
-        if now.hour < 8 or len(session_range) < 3:
+        if now.tzinfo is None:
+            return None
+        london = now.astimezone(_LONDON)
+        # Opening range = the first London hour (08:00-09:00 local, DST-aware), so the
+        # range tracks the actual London open year-round instead of a fixed UTC hour.
+        session_range = [bar for bar in candles
+                         if bar["time"].astimezone(_LONDON).date() == london.date()
+                         and 8 <= bar["time"].astimezone(_LONDON).hour < 9]
+        if london.hour < 9 or len(session_range) < 3:
             return None
         high, low = max(float(bar["high"]) for bar in session_range), min(
             float(bar["low"]) for bar in session_range)

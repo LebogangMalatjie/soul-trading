@@ -42,7 +42,7 @@ SYMBOLS: dict[Symbol, SymbolConfig] = {
     Symbol.US100: SymbolConfig("US100", "NY-open breakout/VWAP pullback", ((13, 21),), _INDEX, 35, 0.2, 1, "profit_ladder", False),
     Symbol.US500: SymbolConfig("US500", "Trend pullback/VWAP reversion", ((13, 21),), _INDEX, 25, 0.2, 1, "profit_ladder", False),
     Symbol.GER40: SymbolConfig("GER40", "Frankfurt/London breakout and gap fill", ((7, 16),), _INDEX, 35, 0.2, 1, "profit_ladder", False),
-    Symbol.USOIL: SymbolConfig("USOIL", "Momentum breakout with EIA event filter", ((13, 21),), _INDEX, 35, 0.2, 1, "profit_ladder", False),
+    Symbol.USOIL: SymbolConfig("USOIL", "Momentum breakout with EIA event filter", ((13, 21),), _FX, 35, 0.2, 1, "profit_ladder", False),
     Symbol.ETHUSD: SymbolConfig("ETHUSD", "ETH squeeze/BTC lead-lag/weekend", _CONTINUOUS, _FX, 100, 0.2, 1, "profit_ladder", False),
 }
 
