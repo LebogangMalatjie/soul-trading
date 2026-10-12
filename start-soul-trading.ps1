@@ -88,9 +88,13 @@ try {
     }
 
     $env:BROKER = 'mt5'
-    $env:ALLOWED_ORIGINS = 'http://localhost:3000'
-    $env:SYMBOL_MAP = '{"BTCUSD":"BTCUSDm"}'
+    $env:ALLOWED_ORIGINS = 'http://localhost:3000,http://127.0.0.1:3000'
+    $env:SYMBOL_MAP = '{"US30":"US30m","XAUUSD":"XAUUSDm","XAGUSD":"XAGUSDm","BTCUSD":"BTCUSDm","US500":"US500m"}'
     $env:AI_META_LAYER_PATH = $aiMetaLayerPath
+    # News Bias Engine: enabled, live (dry-run off). Set NEWS_BIAS_DRY_RUN=1 to paper-trade.
+    $env:NEWS_BIAS_ENABLED = '1'
+    $env:NEWS_BIAS_DRY_RUN = '0'
+    $env:NEWS_BIAS_TARGET_ZAR = '15000'
     if (Test-Path -LiteralPath $aiMetaConfigPath -PathType Leaf) {
         $env:AI_META_CONFIG = $aiMetaConfigPath
     }
@@ -102,7 +106,7 @@ try {
     New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
     $backendProcess = Start-Process `
         -FilePath $pythonPath `
-        -ArgumentList @('-m', 'uvicorn', 'main:app', '--host', '0.0.0.0', '--port', '8000', '--workers', '1') `
+        -ArgumentList @('-m', 'uvicorn', 'main:app', '--host', '::', '--port', '8000', '--workers', '1') `
         -WorkingDirectory $backendPath `
         -RedirectStandardOutput (Join-Path $logDirectory 'backend.log') `
         -RedirectStandardError (Join-Path $logDirectory 'backend-error.log') `
@@ -123,14 +127,14 @@ try {
     while ((Get-Date) -lt $deadline -and (-not $backendReady -or -not $frontendReady)) {
         if (-not $backendReady) {
             try {
-                $null = Invoke-WebRequest -Uri 'http://127.0.0.1:8000/health' -TimeoutSec 2 -UseBasicParsing
+                $null = Invoke-WebRequest -Uri 'http://localhost:8000/health' -TimeoutSec 2 -UseBasicParsing
                 $backendReady = $true
             }
             catch {}
         }
         if (-not $frontendReady) {
             try {
-                $null = Invoke-WebRequest -Uri 'http://127.0.0.1:3000' -TimeoutSec 2 -UseBasicParsing
+                $null = Invoke-WebRequest -Uri 'http://localhost:3000' -TimeoutSec 2 -UseBasicParsing
                 $frontendReady = $true
             }
             catch {}
