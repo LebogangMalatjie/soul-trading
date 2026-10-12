@@ -278,8 +278,10 @@ def market_open(symbol: Symbol | str, now_utc: datetime) -> bool:
         raise ValueError("now_utc must be timezone-aware")
     now = now_utc.astimezone(timezone.utc)
     normalized = re.sub(r"[^a-z0-9]", "", str(getattr(symbol, "value", symbol)).casefold())
-    if normalized == Symbol.BTCUSD.value.casefold() or \
-            normalized.startswith("btcusd") or normalized.endswith("btcusd"):
+    crypto_pairs = {"btcusd", "ethusd"}
+    if normalized in crypto_pairs or any(
+        normalized.startswith(pair) or normalized.endswith(pair) for pair in crypto_pairs
+    ):
         return True
     weekday, minute = now.weekday(), now.hour * 60 + now.minute
     fx_pairs = {

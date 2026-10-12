@@ -25,7 +25,11 @@ class GER40Strategy:
             return None
         high, low = max(float(bar["high"]) for bar in opening), min(
             float(bar["low"]) for bar in opening)
-        prior_close = float(candles[-25]["close"])
+        prior_bars = [bar for bar in candles
+                      if bar["time"].astimezone(timezone.utc).date() < now.date()]
+        if not prior_bars:
+            return None
+        prior_close = float(prior_bars[-1]["close"])
         open_price = float(opening[0]["open"])
         last_close = float(candles[-1]["close"])
         if abs(open_price - prior_close) > 0.4 * volatility and \

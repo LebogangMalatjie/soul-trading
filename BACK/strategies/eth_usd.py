@@ -33,10 +33,10 @@ class ETHUSDStrategy:
             return None
         prior_high = max(float(bar["high"]) for bar in candles[-21:-1])
         prior_low = min(float(bar["low"]) for bar in candles[-21:-1])
-        if close > prior_high and lead > 0 and (weekend or lead > 0):
+        if close > prior_high and (lead > 0 or weekend):
             return StrategySignal("BUY", "ETHUSD squeeze breakout confirmed by BTC lead",
                                   volatility, 2.2 * volatility)
-        if close < prior_low and lead < 0 and (weekend or lead < 0):
+        if close < prior_low and (lead < 0 or weekend):
             return StrategySignal("SELL", "ETHUSD squeeze breakdown confirmed by BTC lead",
                                   volatility, 2.2 * volatility)
         return None
