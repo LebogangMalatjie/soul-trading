@@ -187,3 +187,27 @@ input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px #55B9FF1f; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
 }
+
+/* ---- News Event Bias Engine panel ---- */
+.news-card { display: grid; gap: 12px; }
+.news-event { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: #0e1626; }
+.news-event-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.news-countdown { font-size: 20px; font-weight: 700; color: var(--blue); letter-spacing: .05em; }
+.news-countdown.soon { color: var(--amber); text-shadow: 0 0 12px #FFC66D88; }
+.news-meta { margin: 2px 0 8px; }
+.news-sym { border-top: 1px dashed #2a3a55; padding-top: 8px; margin-top: 8px; }
+.news-sym.buy { border-left: 3px solid var(--green); padding-left: 8px; }
+.news-sym.sell { border-left: 3px solid var(--crimson); padding-left: 8px; }
+.news-sym-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.news-plan-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 12px; margin: 8px 0; }
+.news-plan-grid span { font-size: 12px; color: var(--text); }
+.news-plan-grid small { display: block; color: var(--dim); font-size: 8px; letter-spacing: .08em; }
+.news-target-bar { position: relative; height: 18px; border: 1px solid #344663; border-radius: 999px; background: #090f1b; overflow: hidden; margin: 6px 0; }
+.news-target-bar span { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, var(--blue), var(--green)); }
+.news-target-bar em { position: relative; display: block; text-align: center; font-style: normal; font-size: 10px; line-height: 18px; color: var(--text); }
+.news-orders { display: grid; gap: 2px; font-size: 10px; }
+.news-actions { display: flex; gap: 10px; margin-top: 10px; }
+.btn.news-confirm { color: #04140d; background: var(--green); border-color: var(--green); font-weight: 700;
+  animation: news-flash 1s infinite; }
+@keyframes news-flash { 0%, 100% { box-shadow: 0 0 0 #42F2B000; } 50% { box-shadow: 0 0 16px #42F2B0cc; } }
+@media (prefers-reduced-motion: reduce) { .btn.news-confirm { animation: none; } }

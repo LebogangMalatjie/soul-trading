@@ -1,6 +1,6 @@
 "use client";
 import { FormEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ApiError, api, type SymbolRow } from "@/lib/api";
+import { ApiError, api, type NewsEvent, type NewsFeasibility, type SymbolRow } from "@/lib/api";
 
 type Health = { ok: boolean; auto_trading_enabled: boolean; sessions: number };
 type Status = {
@@ -212,6 +212,108 @@ function AccountCards({ account, error }: { account: AccountSummary | null; erro
           </div>
         </article>
       ))}
+    </section>
+  );
+}
+
+function NewsEventsPanel({ events, token, halted, onAction }: {
+  events: NewsEvent[];
+  token: string | null;
+  halted: boolean;
+  onAction: (eventKey: string, symbol: string, action: "confirm" | "skip") => void;
+}) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  const zar = (v: number) => `R${Math.round(v).toLocaleString()}`;
+
+  if (!events.length) {
+    return (
+      <section className="card news-card">
+        <div className="symbols-heading"><h3>NEWS EVENTS</h3></div>
+        <div className="empty">No upcoming high-impact events scheduled.</div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="card news-card">
+      <div className="symbols-heading">
+        <h3>NEWS EVENTS</h3>
+        {halted && <span className="symbol-halted-banner">KILL SWITCH · CONFIRM DISABLED</span>}
+      </div>
+      {events.map((ev) => {
+        const ms = new Date(ev.event_time).getTime() - now;
+        const mins = ms / 60000;
+        const inWindow = mins <= 6 && mins > -0.02;   // CONFIRM visible from T-6m
+        const passed = ms <= 0;
+        const cd = passed ? "RELEASED"
+          : `${String(Math.floor(mins)).padStart(2, "0")}:${String(Math.floor((-ms) % 60000 / 1000)).padStart(2, "0")}`;
+        return (
+          <article className="news-event" key={ev.event_key}>
+            <div className="news-event-head">
+              <div>
+                <strong>{ev.event_type}</strong> <span className="dim">{ev.title}</span>
+              </div>
+              <span className={`news-countdown ${inWindow && !passed ? "soon" : ""}`}>{cd}</span>
+            </div>
+            <div className="dim news-meta">
+              {ev.currency} · forecast {ev.forecast ?? "--"} · previous {ev.previous ?? "--"}
+            </div>
+            {ev.symbols.length === 0 && <div className="empty">Bias not generated yet (regenerates at T-30/T-15/T-6).</div>}
+            {ev.symbols.map((sp) => {
+              const f = sp.feasibility || ({} as NewsFeasibility);
+              const progress = sp.achieved_target_zar != null
+                ? Math.min(100, (sp.achieved_target_zar / 15000) * 100) : 0;
+              return (
+                <div className={`news-sym ${sp.direction === "BUY" ? "buy" : sp.direction === "SELL" ? "sell" : ""}`} key={sp.symbol}>
+                  <div className="news-sym-head">
+                    <strong>{sp.symbol}</strong>
+                    <span className={`badge state-${sp.direction === "BUY" ? "signal" : sp.direction === "SELL" ? "near" : "watching"}`}>{sp.direction}</span>
+                    {sp.dry_run && <span className="badge">DRY-RUN</span>}
+                    {sp.confirmed && <span className="badge state-signal">CONFIRMED</span>}
+                    {sp.skipped && <span className="badge">SKIPPED</span>}
+                    <span className="dim">{sp.status}</span>
+                  </div>
+                  {sp.direction !== "NO_TRADE" && (
+                    <>
+                      <div className="news-plan-grid">
+                        <span><small>REF</small> {f.reference_price ?? "--"}</span>
+                        <span><small>TARGET</small> {sp.target_level ?? "--"}</span>
+                        <span><small>BUFFER</small> {f.spike_buffer_points ?? 0} pts</span>
+                        <span><small>ORDERS</small> {f.orders_needed ?? sp.orders.length}</span>
+                        <span><small>MOVE→T</small> {f.required_move_points ?? 0} pts{f.required_move_pct_of_p80 != null ? ` (${Math.round(f.required_move_pct_of_p80 * 100)}% of p80)` : ""}</span>
+                        <span><small>WORST</small> {zar(f.worst_case_loss_zar ?? 0)}</span>
+                      </div>
+                      {f.above_p80 && <div className="err">⚠ Required move exceeds the historical p80 move.</div>}
+                      <div className="news-target-bar" aria-label="R15k target progress">
+                        <span style={{ width: `${progress}%` }} />
+                        <em>{zar(sp.achieved_target_zar ?? 0)} / R15,000</em>
+                      </div>
+                      <div className="news-orders">
+                        {sp.orders.map((o, i) => (
+                          <span key={i} className="dim">{o.order_type} @ {o.entry_price} · {o.lots} lots · +{Math.round(o.profit_at_target_zar)}</span>
+                        ))}
+                      </div>
+                      {inWindow && !passed && !sp.confirmed && !sp.skipped && (
+                        <div className="news-actions">
+                          <button className="btn news-confirm" disabled={halted || !token}
+                            onClick={() => onAction(ev.event_key, sp.symbol, "confirm")}>
+                            CONFIRM
+                          </button>
+                          <button className="btn danger" disabled={!token}
+                            onClick={() => onAction(ev.event_key, sp.symbol, "skip")}>
+                            SKIP
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </article>
+        );
+      })}
     </section>
   );
 }
@@ -457,6 +559,7 @@ export default function Dashboard() {
   const [pinError, setPinError] = useState("");
   const [positionsError, setPositionsError] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
+  const [newsEvents, setNewsEvents] = useState<NewsEvent[]>([]);
   const lastId = useRef(0);
 
   useEffect(() => { setToken(sessionStorage.getItem("soul_token")); }, []);
@@ -542,17 +645,34 @@ export default function Dashboard() {
     }
   };
 
+  const newsAction = async (eventKey: string, symbol: string, action: "confirm" | "skip") => {
+    if (!token) return;
+    try {
+      await api(`/api/v1/news-events/${encodeURIComponent(eventKey)}/${action}?symbol=${encodeURIComponent(symbol)}`, {
+        method: "POST", token,
+      });
+      // Optimistically reflect the action until the next poll refreshes.
+      setNewsEvents((cur) => cur.map((ev) => ev.event_key === eventKey
+        ? { ...ev, symbols: ev.symbols.map((sp) => sp.symbol === symbol
+            ? { ...sp, confirmed: action === "confirm", skipped: action === "skip" } : sp) }
+        : ev));
+    } catch (e) {
+      setSymbolError(`News ${action} failed: ${(e as Error).message}`);
+    }
+  };
+
   usePoll(pollHealth, 5000);
   usePoll(pollAccount, 5000);
   usePoll(async () => {
     if (!token) return;
     try {
-      const [st, su, pos, ex, symbolResult] = await Promise.allSettled([
+      const [st, su, pos, ex, symbolResult, newsResult] = await Promise.allSettled([
         api<Status>("/api/v1/bot/status", { token }),
         api<unknown>("/api/v1/bot/setups", { token }),
         api<Position[]>("/api/v1/bot/positions", { token }),
         api<Line[]>(`/api/v1/bot/explain?after=${lastId.current}`, { token }),
         api<SymbolRow[]>("/api/v1/symbols", { token }),
+        api<NewsEvent[]>("/api/v1/news-events/upcoming", { token }),
       ]);
       if (st.status === "rejected") throw st.reason;
       if (su.status === "rejected") throw su.reason;
@@ -572,6 +692,12 @@ export default function Dashboard() {
       } else {
         setSymbolError("Symbol status is temporarily unavailable.");
       }
+      if (newsResult.status === "fulfilled") {
+        setNewsEvents(newsResult.value);
+      } else if (newsResult.reason instanceof ApiError && newsResult.reason.status === 401) {
+        saveToken(null);
+      }
+      // 503 (engine disabled) or other errors: leave the last known events in place.
     } catch (e) { if (e instanceof ApiError && e.status === 401) saveToken(null); }
   }, 3000);
 
@@ -627,6 +753,8 @@ export default function Dashboard() {
             <LearningBar status={status?.ai_learning} />
             <SymbolsPanel rows={symbolRows} currency={account?.currency ?? "USD"}
               error={symbolError} onToggle={updateSymbol} />
+            <NewsEventsPanel events={newsEvents} token={token}
+              halted={Boolean(health && !health.auto_trading_enabled)} onAction={newsAction} />
             <div className="card focus-section">
               <h3>FOCUS</h3>
               {focus.length ? <div className="focus-list" ref={focusRef}>
