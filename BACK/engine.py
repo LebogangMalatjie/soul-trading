@@ -971,6 +971,104 @@ CREATE TABLE IF NOT EXISTS symbol_controls (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_by TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS news_items (
+    id BIGSERIAL PRIMARY KEY,
+    event_key TEXT NOT NULL,
+    title TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT '',
+    url TEXT NOT NULL DEFAULT '',
+    published_at TIMESTAMPTZ,
+    summary TEXT NOT NULL DEFAULT '',
+    symbol_scores JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS news_items_event ON news_items (event_key, published_at DESC);
+CREATE TABLE IF NOT EXISTS event_predictions (
+    id BIGSERIAL PRIMARY KEY,
+    event_key TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    event_time TIMESTAMPTZ NOT NULL,
+    symbol TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    probability_pct DOUBLE PRECISION NOT NULL DEFAULT 0,
+    news_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+    reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+    sources JSONB NOT NULL DEFAULT '[]'::jsonb,
+    historical_support JSONB NOT NULL DEFAULT '{}'::jsonb,
+    formula TEXT NOT NULL DEFAULT '',
+    generated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    locked BOOLEAN NOT NULL DEFAULT FALSE,
+    actual_direction TEXT,
+    actual_move_points DOUBLE PRECISION,
+    correct BOOLEAN
+);
+CREATE INDEX IF NOT EXISTS event_predictions_event ON event_predictions (event_key, symbol);
+CREATE INDEX IF NOT EXISTS event_predictions_type ON event_predictions (event_type, event_time DESC);
+CREATE TABLE IF NOT EXISTS event_history (
+    id BIGSERIAL PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    event_time TIMESTAMPTZ NOT NULL,
+    symbol TEXT NOT NULL,
+    surprise DOUBLE PRECISION,
+    first_1m_dir TEXT,
+    first_1m_points DOUBLE PRECISION,
+    m5_dir TEXT,
+    m5_points DOUBLE PRECISION,
+    m15_dir TEXT,
+    m15_points DOUBLE PRECISION,
+    fakeout_points DOUBLE PRECISION,
+    spread_points DOUBLE PRECISION,
+    slippage_points DOUBLE PRECISION,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (event_type, event_time, symbol)
+);
+CREATE INDEX IF NOT EXISTS event_history_lookup ON event_history (event_type, symbol, event_time DESC);
+CREATE TABLE IF NOT EXISTS event_plans (
+    id BIGSERIAL PRIMARY KEY,
+    event_key TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    event_time TIMESTAMPTZ NOT NULL,
+    symbol TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    dry_run BOOLEAN NOT NULL DEFAULT TRUE,
+    target_zar DOUBLE PRECISION NOT NULL DEFAULT 15000,
+    target_level DOUBLE PRECISION,
+    total_lots DOUBLE PRECISION,
+    required_margin DOUBLE PRECISION,
+    achieved_target_zar DOUBLE PRECISION,
+    plan_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    feasibility_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    confirmed_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS event_plans_event ON event_plans (event_key, symbol);
+CREATE INDEX IF NOT EXISTS event_plans_status ON event_plans (status, event_time DESC);
+CREATE TABLE IF NOT EXISTS event_orders (
+    id BIGSERIAL PRIMARY KEY,
+    plan_id BIGINT NOT NULL REFERENCES event_plans(id) ON DELETE CASCADE,
+    event_key TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    broker_symbol TEXT NOT NULL,
+    order_type TEXT NOT NULL,
+    entry_price DOUBLE PRECISION NOT NULL,
+    lots DOUBLE PRECISION NOT NULL,
+    stop_loss DOUBLE PRECISION,
+    take_profit DOUBLE PRECISION,
+    magic BIGINT NOT NULL,
+    comment TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    broker_order_id TEXT,
+    broker_position_id TEXT,
+    filled_price DOUBLE PRECISION,
+    close_profit DOUBLE PRECISION,
+    error TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS event_orders_plan ON event_orders (plan_id);
+CREATE INDEX IF NOT EXISTS event_orders_status ON event_orders (status, created_at DESC);
 """
 
 
