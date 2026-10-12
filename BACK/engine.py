@@ -2088,7 +2088,8 @@ class TradingEngine:
             if symbol == FX_ANCHOR_SYMBOL and not self.can_enter_symbol(symbol):
                 diag = {
                     "score": 0.0,
-                    "why": "EUR/GBP is the relative-strength anchor and is not traded directly.",
+                    "why": "EUR/GBP is not accepting new entries right now; it also guides "
+                           "EUR/USD and GBP/USD as the relative-strength anchor.",
                 }
             elif symbol in PLUGINS:
                 diag = {"score": 0.0, "why": "Plug-in strategy found no qualifying setup."}

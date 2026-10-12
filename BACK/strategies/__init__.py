@@ -282,10 +282,10 @@ def btc_squeeze_breakout(symbol, c15, c5, c1, now, scalping, min_score, diag, st
 
 
 # --------------------------------------------------------------------------- #
-# EURGBP - relative-strength anchor, not an execution instrument
+# EURGBP - tradeable via its PLUGIN; also the relative-strength anchor
 # --------------------------------------------------------------------------- #
 def eurgbp_range_fade(symbol, c15, c5, c1, now, scalping, min_score, diag, state) -> Optional[Signal]:
-    _diag(diag, "EUR/GBP is the relative-strength anchor and is not traded directly", 0)
+    _diag(diag, "EUR/GBP is evaluated by its dedicated plug-in; it also guides EUR/USD and GBP/USD", 0)
     return None
 
 
