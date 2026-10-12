@@ -14,6 +14,13 @@ class MarketHoursTests(unittest.TestCase):
         self.assertTrue(market_open("BTCUSD", saturday_rollover))
         self.assertTrue(market_open("BTCUSDm", saturday_rollover))
 
+    def test_ethusd_remains_open_during_weekend_and_rollover(self):
+        saturday_rollover = datetime(2026, 10, 3, 21, 30, tzinfo=timezone.utc)
+
+        self.assertTrue(market_open(Symbol.ETHUSD, saturday_rollover))
+        self.assertTrue(market_open("ETHUSD", saturday_rollover))
+        self.assertTrue(market_open("ETHUSDm", saturday_rollover))
+
     def test_weekend_closes_non_crypto_cfds(self):
         saturday = datetime(2026, 10, 3, 12, 0, tzinfo=timezone.utc)
 
