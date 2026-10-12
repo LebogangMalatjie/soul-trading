@@ -1,0 +1,34 @@
+# --- Python (BACK) ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# --- Node / Next.js (FRONT) ---
+node_modules/
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+next-env.d.ts.bak
+
+# --- Secrets / environment (NEVER commit) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+*.log
+
+# --- Local MT5 / runtime data ---
+ai_meta_data/
+*.sqlite3
+*.db
