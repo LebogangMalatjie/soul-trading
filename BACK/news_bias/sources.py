@@ -91,6 +91,51 @@ def classify_event(title: str) -> Optional[str]:
     return None
 
 
+class SharedCalendarSource(CalendarSource):
+    """Reads events from the engine's already-fetched EconomicCalendar.
+
+    Avoids a second HTTP fetch of the same feed (which can 429) by adapting the
+    engine's EconEvent list. ``engine_calendar`` is the engine.EconomicCalendar.
+    """
+
+    def __init__(self, engine_calendar) -> None:
+        self._cal = engine_calendar
+
+    async def high_impact_events(self, since: datetime) -> list[CalendarEvent]:
+        out: list[CalendarEvent] = []
+        for e in getattr(self._cal, "events", []) or []:
+            try:
+                if e.time < since:
+                    continue
+                etype = getattr(e.event_type, "value", str(e.event_type)).upper()
+                out.append(CalendarEvent(
+                    event_type=etype, title=e.title, time=e.time,
+                    currency=getattr(e, "country", "USD") or "USD", impact="High",
+                    forecast=getattr(e, "forecast", None), previous=getattr(e, "previous", None),
+                ))
+            except Exception:  # noqa: BLE001
+                continue
+        out.sort(key=lambda e: e.time)
+        return out
+
+
+class FallbackCalendarSource(CalendarSource):
+    """Tries the shared calendar first; falls back to a live fetch on empty/error."""
+
+    def __init__(self, primary: CalendarSource, fallback: CalendarSource) -> None:
+        self._primary = primary
+        self._fallback = fallback
+
+    async def high_impact_events(self, since: datetime) -> list[CalendarEvent]:
+        try:
+            events = await self._primary.high_impact_events(since)
+            if events:
+                return events
+        except Exception:  # noqa: BLE001
+            pass
+        return await self._fallback.high_impact_events(since)
+
+
 def _num(s: Any) -> Optional[float]:
     import re
 

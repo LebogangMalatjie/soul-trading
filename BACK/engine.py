@@ -1777,16 +1777,21 @@ class TradingEngine:
         try:
             from news_bias import coordinator as nb_coord
             from news_bias.config import BiasEngineConfig
-            from news_bias.sources import ForexFactoryCalendar, GoogleNewsSource
+            from news_bias.sources import (FallbackCalendarSource, ForexFactoryCalendar,
+                                           GoogleNewsSource, SharedCalendarSource)
 
             cfg = BiasEngineConfig(
                 enabled=self.settings.news_bias_enabled,
                 dry_run=self.settings.news_bias_dry_run,
                 target_zar=self.settings.news_bias_target_zar,
             )
+            # Reuse the engine's already-fetched calendar (avoids a second fetch that
+            # can 429); fall back to a direct fetch only when it has no events.
+            calendar = FallbackCalendarSource(
+                SharedCalendarSource(self.calendar), ForexFactoryCalendar())
             engine = nb_coord.NewsBiasEngine(
                 config=cfg,
-                calendar=ForexFactoryCalendar(),
+                calendar=calendar,
                 news=GoogleNewsSource(),
                 db=self.db,
                 get_session=lambda: next(iter(self.sessions.values()), None),
