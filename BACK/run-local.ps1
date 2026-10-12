@@ -27,5 +27,11 @@ if (-not $env:MT5_PASSWORD) {
 if (-not $env:METAAPI_ACCOUNT_ID) {
   $env:METAAPI_ACCOUNT_ID = ''
 }
+# Broker-specific symbol map (JSON). Resolves ambiguous MT5 names to the exact
+# contract you trade. Add/override here or in your user environment before launch.
+if (-not $env:SYMBOL_MAP) {
+  $env:SYMBOL_MAP = '{"US30":"US30m","XAUUSD":"XAUUSDm","XAGUSD":"XAGUSDm","BTCUSD":"BTCUSDm","US500":"US500m"}'
+}
 
-& 'C:\Python314\python.exe' -m uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1
+# Dual-stack bind so both 127.0.0.1 and ::1 (browser "localhost") reach the API.
+& 'C:\Python314\python.exe' -m uvicorn main:app --host '::' --port 8000 --workers 1
