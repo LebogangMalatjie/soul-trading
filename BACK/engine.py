@@ -601,6 +601,19 @@ class MetaApiBroker:
     async def position_deals(self, position_id: str) -> list[dict]:
         return await self._req("GET", self.client_base, f"/history-deals/position/{position_id}") or []
 
+    # -- news-bias pending orders (MetaApi path not implemented; local MT5 only) --
+    async def place_pending_order(self, *args, **kwargs) -> str:
+        raise BrokerError("News-bias pending orders require the local MT5 broker (BROKER=mt5)")
+
+    async def cancel_order(self, order_ticket: str) -> None:
+        raise BrokerError("News-bias pending orders require the local MT5 broker (BROKER=mt5)")
+
+    async def symbol_stops_level(self, symbol: str) -> int:
+        return 0
+
+    async def symbol_margin(self, symbol: str, order_type: str, volume: float, price: float) -> float:
+        raise BrokerError("News-bias margin check requires the local MT5 broker (BROKER=mt5)")
+
 
 # =========================================================================== #
 # BROKER ADAPTER #2: local MetaTrader 5 terminal (free; Windows only)
@@ -866,6 +879,65 @@ class MT5LocalBroker:
         return await self._run(self._market_order, symbol, side, volume, sl, tp, comment)
     async def close_position(self, position_id: str) -> None: await self._run(self._close_position, position_id)
     async def position_deals(self, position_id: str) -> list[dict]: return await self._run(self._position_deals, position_id)
+
+    # -- news-bias pending orders (additive; used only by the News Bias Engine) --
+    def _place_pending_order(self, symbol: str, order_type: str, entry: float, volume: float,
+                             sl: float, tp: float, magic: int, comment: str,
+                             expiration: Optional[datetime] = None) -> str:
+        mt5 = self._ensure()
+        symbol = self._resolve_symbol(mt5, symbol)
+        info = mt5.symbol_info(symbol)
+        if not info:
+            raise BrokerError(f"cannot place pending order: no symbol info for {symbol}")
+        is_buy_stop = order_type == "BUY_STOP"
+        req = {
+            "action": mt5.TRADE_ACTION_PENDING, "symbol": symbol, "volume": float(volume),
+            "type": mt5.ORDER_TYPE_BUY_STOP if is_buy_stop else mt5.ORDER_TYPE_SELL_STOP,
+            "price": float(entry), "sl": float(sl) if sl else 0.0,
+            "tp": float(tp) if tp else 0.0, "deviation": 20,
+            "magic": int(magic), "comment": comment[:30],
+            "type_time": mt5.ORDER_TIME_SPECIFIED if expiration else mt5.ORDER_TIME_GTC,
+            "type_filling": self._filling(mt5, info),
+        }
+        if expiration:
+            req["expiration"] = int(expiration.timestamp())
+        res = self._send(mt5, req, "pending order")
+        return str(res.order)
+
+    def _cancel_order(self, order_ticket: str) -> None:
+        mt5 = self._ensure()
+        orders = mt5.orders_get(ticket=int(order_ticket))
+        if not orders:
+            return  # already filled/cancelled/expired
+        self._send(mt5, {"action": mt5.TRADE_ACTION_REMOVE, "order": int(order_ticket)},
+                   "cancel order")
+
+    def _symbol_stops_level(self, symbol: str) -> int:
+        mt5 = self._ensure()
+        symbol = self._resolve_symbol(mt5, symbol)
+        info = mt5.symbol_info(symbol)
+        return int(getattr(info, "trade_stops_level", 0) or 0) if info else 0
+
+    def _symbol_margin(self, symbol: str, order_type: str, volume: float, price: float) -> float:
+        mt5 = self._ensure()
+        symbol = self._resolve_symbol(mt5, symbol)
+        is_buy = order_type in ("BUY", "BUY_STOP")
+        mt5_order_type = mt5.ORDER_TYPE_BUY if is_buy else mt5.ORDER_TYPE_SELL
+        return float(mt5.order_calc_margin(mt5_order_type, symbol, float(volume), float(price)) or 0.0)
+
+    async def place_pending_order(self, symbol, order_type, entry, volume, sl, tp, magic,
+                                  comment, expiration=None) -> str:
+        return await self._run(self._place_pending_order, symbol, order_type, entry, volume,
+                               sl, tp, magic, comment, expiration)
+
+    async def cancel_order(self, order_ticket: str) -> None:
+        await self._run(self._cancel_order, order_ticket)
+
+    async def symbol_stops_level(self, symbol: str) -> int:
+        return await self._run(self._symbol_stops_level, symbol)
+
+    async def symbol_margin(self, symbol: str, order_type: str, volume: float, price: float) -> float:
+        return await self._run(self._symbol_margin, symbol, order_type, volume, price)
 
 
 # =========================================================================== #
