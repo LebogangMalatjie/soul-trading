@@ -88,6 +88,9 @@ class Settings:
     llm_backend_attr: str = "generate_json"
     ai_meta_layer_path: str = ""
     ai_meta_config_path: str = ""
+    news_bias_enabled: bool = False       # master switch for the News Bias Engine
+    news_bias_dry_run: bool = True        # global dry-run until explicitly turned off
+    news_bias_target_zar: float = 15000.0
     access_key: str = ""
     max_sessions: int = 5
     tick_seconds: int = 20
@@ -132,6 +135,9 @@ class Settings:
             llm_backend_attr=llm_backend_attr,
             ai_meta_layer_path=ai_meta_layer_path,
             ai_meta_config_path=ai_meta_config_path,
+            news_bias_enabled=os.environ.get("NEWS_BIAS_ENABLED", "").lower() in ("1", "true", "yes"),
+            news_bias_dry_run=os.environ.get("NEWS_BIAS_DRY_RUN", "true").lower() not in ("0", "false", "no"),
+            news_bias_target_zar=float(os.environ.get("NEWS_BIAS_TARGET_ZAR", "15000") or 15000),
             access_key=req("SOUL_ACCESS_KEY"),
             max_sessions=int(os.environ.get("MAX_SESSIONS", "1" if broker == "mt5" else "5")),
             tick_seconds=int(os.environ.get("TICK_SECONDS", "20")),
@@ -1764,6 +1770,45 @@ class TradingEngine:
         self._symbol_controls: dict[str, dict[str, Any]] = {}
         self._symbol_controls_refreshed = 0.0
         self._symbol_controls_available = False
+        self.news_bias = self._init_news_bias()
+
+    def _init_news_bias(self):
+        """Build the News Bias Engine coordinator (does nothing unless enabled)."""
+        try:
+            from news_bias import coordinator as nb_coord
+            from news_bias.config import BiasEngineConfig
+            from news_bias.sources import ForexFactoryCalendar, GoogleNewsSource
+
+            cfg = BiasEngineConfig(
+                enabled=self.settings.news_bias_enabled,
+                dry_run=self.settings.news_bias_dry_run,
+                target_zar=self.settings.news_bias_target_zar,
+            )
+            engine = nb_coord.NewsBiasEngine(
+                config=cfg,
+                calendar=ForexFactoryCalendar(),
+                news=GoogleNewsSource(),
+                db=self.db,
+                get_session=lambda: next(iter(self.sessions.values()), None),
+                is_auto_trading=is_auto_trading_enabled,
+                note=self._news_bias_note,
+                log=log.info,
+            )
+            nb_coord.set_engine(engine)
+            if cfg.enabled:
+                log.info("news-bias engine enabled (dry_run=%s, target=R%.0f)",
+                         cfg.dry_run, cfg.target_zar)
+            return engine
+        except Exception:  # noqa: BLE001 - never let this break engine startup
+            log.exception("news-bias engine init failed; continuing without it")
+            return None
+
+    def _news_bias_note(self, level: str, text: str, symbol: str | None = None) -> None:
+        for session in self.sessions.values():
+            try:
+                session.note(level, text, symbol)
+            except Exception:  # noqa: BLE001
+                pass
 
     def _init_ai_meta(self) -> None:
         path = self.settings.ai_meta_layer_path
@@ -1802,6 +1847,7 @@ class TradingEngine:
             self._spawn(self._warm_ai_meta())
         await self.calendar.refresh()
         self._schedule_events()
+        self._schedule_news_bias()
         self.scheduler.add_job(self._refresh_calendar, "interval", hours=6, id="calendar",
                                max_instances=1, coalesce=True)
         self.scheduler.start()
@@ -1843,6 +1889,56 @@ class TradingEngine:
                 continue  # window already open/passed: never enter late
             self.scheduler.add_job(self._on_event_window, "date", run_date=run_at, args=[ev],
                                    id=f"event:{ev.key}", replace_existing=True, misfire_grace_time=60)
+
+    def _schedule_news_bias(self) -> None:
+        """Register news-bias regen + lock jobs for upcoming events (if enabled)."""
+        if self.news_bias is None or not self.news_bias.config.enabled:
+            return
+        # Calendar access is async, so schedule the jobs from a background task.
+        self._spawn(self._schedule_news_bias_async(utcnow()))
+
+    async def _schedule_news_bias_async(self, now) -> None:
+        if self.news_bias is None or not self.news_bias.config.enabled:
+            return
+        try:
+            events = await self.news_bias.upcoming_events(now)
+        except Exception:  # noqa: BLE001
+            return
+        from news_bias.scheduler import build_schedule
+        for ev in events:
+            try:
+                sched = build_schedule(
+                    ev.time,
+                    regen_offsets=self.news_bias.config.regen_offsets,
+                    lock_offset_minutes=self.news_bias.config.lock_offset_minutes,
+                    place_offset_minutes=self.news_bias.config.place_offset_minutes,
+                    confirm_cutoff_seconds=self.news_bias.config.confirm_cutoff_seconds,
+                    pending_expiry_minutes=self.news_bias.config.for_symbol("").pending_expiry_minutes,
+                )
+            except Exception:  # noqa: BLE001
+                continue
+            for i, t in enumerate(sched.regen_times):
+                if t <= now:
+                    continue
+                self.scheduler.add_job(self._news_bias_regen, "date", run_date=t, args=[ev],
+                                       id=f"nb:regen:{ev.key}:{i}", replace_existing=True,
+                                       misfire_grace_time=120)
+            if sched.lock_time and sched.lock_time > now:
+                self.scheduler.add_job(self._news_bias_lock, "date", run_date=sched.lock_time,
+                                       args=[ev], id=f"nb:lock:{ev.key}", replace_existing=True,
+                                       misfire_grace_time=120)
+
+    async def _news_bias_regen(self, ev) -> None:
+        if self.news_bias is None:
+            return
+        try:
+            await self.news_bias.process_event(ev)
+        except Exception:  # noqa: BLE001
+            log.exception("news-bias regen failed for %s", getattr(ev, "key", ev))
+
+    async def _news_bias_lock(self, ev) -> None:
+        """At lock (T-5): final regen; plans await confirm. Places nothing by itself."""
+        await self._news_bias_regen(ev)
 
     def _spawn(self, coro) -> None:
         t = asyncio.create_task(coro)
@@ -1912,6 +2008,8 @@ class TradingEngine:
             await self.refresh_symbol_controls()
             await self._sync_positions(s)           # always runs, even when trading is disabled
             await self._evaluate(s)
+            if self.news_bias is not None and self.news_bias.config.enabled:
+                await self.news_bias.monitor_all()
         except Exception:  # noqa: BLE001
             log.exception("tick failed for %s", user_id)
 
