@@ -97,6 +97,9 @@ class Settings:
     broker: str = "metaapi"      # "metaapi" (paid cloud bridge) or "mt5" (free, local Windows terminal)
     mt5_path: str = ""
     symbol_map: dict = field(default_factory=dict)
+    telegram_token: str = ""     # from TELEGRAM_BOT_TOKEN (never committed)
+    telegram_chat_id: str = ""   # from TELEGRAM_CHAT_ID
+    telegram_signal_chat_id: str = ""  # optional channel for signals (TELEGRAM_SIGNAL_CHAT_ID)
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -144,6 +147,9 @@ class Settings:
             broker=broker,
             mt5_path=os.environ.get("MT5_PATH", ""),
             symbol_map=json.loads(os.environ.get("SYMBOL_MAP", "{}") or "{}"),
+            telegram_token=(os.environ.get("TELEGRAM_BOT_TOKEN", "") or "").strip(),
+            telegram_chat_id=(os.environ.get("TELEGRAM_CHAT_ID", "") or "").strip(),
+            telegram_signal_chat_id=(os.environ.get("TELEGRAM_SIGNAL_CHAT_ID", "") or "").strip(),
         )
 
 
@@ -1814,6 +1820,21 @@ class TradingEngine:
                 session.note(level, text, symbol)
             except Exception:  # noqa: BLE001
                 pass
+        # Mirror news-bias milestones to Telegram (best-effort, non-blocking).
+        self._spawn(self._notify_news(level, text, symbol))
+
+    async def _notify_news(self, level: str, text: str, symbol: str | None) -> None:
+        try:
+            from notify import telegram
+            if not telegram.enabled:
+                return
+            # Only push the meaningful milestones, not every regen line.
+            keywords = ("plan built", "confirmed", "skipped", "placed", "target", "expired", "bias:")
+            if level == "event" and any(k in text.lower() for k in keywords):
+                prefix = "📰" if "bias" in text.lower() or "plan" in text.lower() else "⚡"
+                await telegram.send(f"{prefix} <b>{text}</b>")
+        except Exception:  # noqa: BLE001
+            log.exception("telegram news-bias notify failed")
 
     def _init_ai_meta(self) -> None:
         path = self.settings.ai_meta_layer_path
@@ -3005,6 +3026,28 @@ class TradingEngine:
         s.note("trade", f"Took {side.value} {symbol.value} {lots} lots @ {entry} | SL {sl} TP {tp} | "
                f"{source.value}, score {score:.0f}, {session.value}, "
                f"{'scalping' if trade_scalping else 'day trading'}", symbol.value)
+        await self._notify_trade_opened(s, symbol, side, lots, entry, sl, tp,
+                                       strategy or source.value.title(), reason=strategy or "")
+
+    async def _notify_trade_opened(self, s, symbol, side, lots, entry, sl, tp, strategy, reason=""):
+        """Fire-and-forget Telegram card for a newly opened trade (never blocks/breaks)."""
+        try:
+            from notify import format_trade_opened, telegram
+            if not telegram.enabled:
+                return
+            digits = 5
+            try:
+                spec = await s.spec(s.config.broker_symbol(symbol))
+                digits = spec.digits
+            except Exception:  # noqa: BLE001
+                pass
+            text = format_trade_opened(
+                symbol=symbol.value, side=side.value, lots=lots, entry=entry, stop=sl, tp=tp,
+                strategy=strategy, reason=reason or f"{strategy} setup", digits=digits,
+                source=strategy)
+            await telegram.send_signal(text)
+        except Exception:  # noqa: BLE001
+            log.exception("telegram trade-opened notify failed")
 
     async def _safe_close(self, s: UserSession, position_id: str, reason: str) -> bool:
         s.close_reasons[position_id] = reason
@@ -3043,6 +3086,21 @@ class TradingEngine:
         trade.close_reason = s.close_reasons.pop(pid, None) or self._infer_reason(trade)
         await self.db.close_trade(trade)
         s.open_trades.pop(pid, None)
+        await self._notify_trade_closed(trade)
+
+    async def _notify_trade_closed(self, trade):
+        """Fire-and-forget Telegram card for a closed trade (never blocks/breaks)."""
+        try:
+            from notify import format_trade_closed, telegram
+            if not telegram.enabled:
+                return
+            text = format_trade_closed(
+                symbol=trade.symbol.value, side=trade.side.value, lots=trade.volume,
+                entry=trade.open_price, close=trade.close_price, profit=trade.profit,
+                reason=trade.close_reason or "")
+            await telegram.send(text)
+        except Exception:  # noqa: BLE001
+            log.exception("telegram trade-closed notify failed")
         s.finalize_attempts.pop(pid, None)
         if self.ai_meta is not None:
             try:
@@ -3208,10 +3266,23 @@ class TradingEngine:
                 except Exception:  # noqa: BLE001
                     flat = False
             log.critical("EMERGENCY SHUTDOWN: closed=%d failed=%d flat=%s", len(closed_ids), len(failed), flat)
+            self._spawn(self._notify_shutdown(len(closed_ids), flat and not failed))
             return ShutdownResponse(
                 auto_trading_enabled=is_auto_trading_enabled(), sessions_processed=len(sessions),
                 positions_closed=len(closed_ids), positions_failed=sorted(failed.values()),
                 fully_flat=flat and not failed, triggered_at=utcnow())
+
+    async def _notify_shutdown(self, closed: int, flat: bool) -> None:
+        try:
+            from notify import telegram
+            if not telegram.enabled:
+                return
+            state = "fully flat ✅" if flat else "NOT flat ⚠️ check broker"
+            await telegram.send(
+                f"🚨 <b>EMERGENCY SHUTDOWN</b>\n\nClosed {closed} position(s). Account {state}.\n"
+                f"Auto-trading is now OFF until resumed.")
+        except Exception:  # noqa: BLE001
+            log.exception("telegram shutdown notify failed")
 
     def resume_trading(self) -> None:
         set_auto_trading(True)
