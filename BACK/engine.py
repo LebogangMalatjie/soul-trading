@@ -2037,24 +2037,10 @@ class TradingEngine:
                     self._broadcast_symbol_notice(
                         symbol, f"{symbol_name} daily cooldown ended; entries are active again.",
                     )
-            losses = await self.db.daily_symbol_losses(today)
-            for symbol_name, count in losses.items():
-                if symbol_name not in {item.value for item in SYMBOLS}:
-                    continue
-                symbol = Symbol(symbol_name)
-                control = self._symbol_controls.get(symbol_name)
-                active = (
-                    control["mode"] == SymbolControlMode.ACTIVE.value
-                    if control is not None else default_control(symbol)[1] == SymbolControlMode.ACTIVE.value
-                )
-                if count >= 4 and active:
-                    cooled = await self.db.set_symbol_control(
-                        symbol_name, True, SymbolControlMode.MANAGE_ONLY.value, "daily-loss-cooldown",
-                    )
-                    self._symbol_controls[symbol_name] = cooled
-                    self._broadcast_symbol_notice(
-                        symbol, f"{symbol_name} reached four losing trades today; switched to manage-only.",
-                    )
+            # NOTE: The previous "4 losing trades in a UTC day -> manage_only" auto-cooldown
+            # has been removed by request. There is now no automatic per-day loss limit; a
+            # symbol keeps trading until it is toggled off/manage_only manually or the global
+            # kill switch fires. The loop above only clears any cooldown set before this change.
             self._symbol_controls_available = True
         except Exception:
             self._symbol_controls_available = False

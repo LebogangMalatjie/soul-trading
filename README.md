@@ -14,7 +14,7 @@ New registry entries default to `paper_mode=True` and controls default to `off`.
 
 The authenticated `GET /api/v1/symbols` endpoint reports each symbol's control state, broker name, strategy, open positions, and today's realized plus floating P&L. `POST /api/v1/symbols/{symbol}/toggle` takes `enabled`, `mode` (`active`, `manage_only`, or `off`), and `close_open_positions`.
 
-`active` permits entries when the global kill switch and other risk gates allow them. `manage_only` blocks entries while leaving open positions in the engine's normal position-processing loop. `off` also blocks entries; open positions remain untouched unless `close_open_positions` is true. Four losing closed trades for a symbol in one UTC day automatically switch it to `manage_only`; that automatic cooldown clears at the next UTC day. The global emergency kill switch overrides every symbol.
+`active` permits entries when the global kill switch and other risk gates allow them. `manage_only` blocks entries while leaving open positions in the engine's normal position-processing loop. `off` also blocks entries; open positions remain untouched unless `close_open_positions` is true. There is no automatic per-day loss limit — a symbol keeps trading until it is toggled `off`/`manage_only` manually or the global emergency kill switch fires, which overrides every symbol.
 
 Apply the additive SQL in `BACK/migrations/001_symbol_controls.sql` to Supabase before deploying. The service also creates the table idempotently at startup.
 
