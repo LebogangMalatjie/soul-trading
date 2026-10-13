@@ -1,6 +1,7 @@
 "use client";
-import { FormEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ApiError, api, type NewsEvent, type NewsFeasibility, type SymbolRow } from "@/lib/api";
+import { LESSONS, type Lesson } from "@/lib/lessons";
 
 type Health = { ok: boolean; auto_trading_enabled: boolean; sessions: number };
 type Status = {
@@ -216,6 +217,103 @@ function HigherTimeframeVotes({ votes }: { votes?: HigherTimeframeVote[] }) {
         </span>
       ))}
     </div>
+  );
+}
+
+function LessonCard({ lesson }: { lesson: Lesson }) {
+  return (
+    <div className="lesson-body">
+      <div className="lesson-edge">{lesson.edge}</div>
+      <div className="lesson-block">
+        <span className="lesson-label">WHAT TO LOOK FOR</span>
+        <ul className="lesson-list">
+          {lesson.watch.map((w, i) => <li key={i}>{w}</li>)}
+        </ul>
+      </div>
+      <div className="lesson-row"><span className="lesson-label">ENTRY</span><span>{lesson.entry}</span></div>
+      <div className="lesson-row"><span className="lesson-label">EXIT</span><span>{lesson.exit}</span></div>
+      <div className="lesson-row"><span className="lesson-label">SESSION</span><span>{lesson.session}</span></div>
+      <div className="lesson-row"><span className="lesson-label">RISK NOTE</span><span>{lesson.risk}</span></div>
+    </div>
+  );
+}
+
+/* Teaches one strategy at a time, and jumps into a live "brief" whenever a
+   symbol has an open position or an active/near setup. */
+function StrategyTutor({ setups, positions }: { setups: Setup[]; positions: Position[] }) {
+  const [idx, setIdx] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const order = useMemo(() => Object.keys(LESSONS), []);
+
+  // Highest-priority live subject: open position > signal > near.
+  const live = useMemo(() => {
+    const ranked = setups
+      .filter((s) => s.live && (s.has_open_position || s.state === "signal" || s.state === "near"))
+      .sort((a, b) => a.priority - b.priority);
+    return ranked[0] ?? null;
+  }, [setups]);
+
+  const openPos = live ? positions.find((p) => symbolMatches(p, live.symbol)) : undefined;
+
+  useEffect(() => {
+    if (live || paused) return;
+    const t = setInterval(() => setIdx((i) => (i + 1) % order.length), 8000);
+    return () => clearInterval(t);
+  }, [live, paused, order.length]);
+
+  const lessonSymbol = live ? live.symbol : order[idx % order.length];
+  const lesson = LESSONS[lessonSymbol] ?? LESSONS[order[0]];
+  const step = (d: number) => setIdx((i) => (i + d + order.length) % order.length);
+
+  const stateLabel = live
+    ? live.has_open_position ? "OPEN POSITION" : live.state === "signal" ? "LIVE SIGNAL" : "NEAR SETUP"
+    : "STRATEGY LESSON";
+  const stateClass = live
+    ? live.has_open_position ? "open" : live.state === "signal" ? "signal" : "near"
+    : "lesson";
+
+  return (
+    <section className="card tutor-section" aria-label="Strategy tutor">
+      <div className="tutor-head">
+        <h3>STRATEGY TUTOR</h3>
+        <span className={`tutor-state tutor-${stateClass}`}>{stateLabel}</span>
+      </div>
+
+      {live && (
+        <div className="tutor-livebar">
+          <span className="tutor-sym">{live.symbol}</span>
+          <span className="tutor-score">{live.score.toFixed(0)}/{live.threshold.toFixed(0)}</span>
+          {live.direction && <span className={`tutor-dir ${live.direction.toLowerCase()}`}>{live.direction}</span>}
+          <span className="tutor-reason">{live.reason}</span>
+        </div>
+      )}
+      {live && <EngulfingVotes votes={live.engulfing_votes} />}
+      {live && <HigherTimeframeVotes votes={live.higher_timeframe_votes} />}
+      {openPos && (
+        <div className="tutor-pos">
+          <span>{openPos.side} {openPos.volume}</span>
+          <span>entry <strong>{openPos.entry}</strong></span>
+          <span>SL <strong className="neg">{openPos.stop_loss ?? "—"}</strong></span>
+          <span>TP <strong className="pos">{openPos.take_profit ?? "—"}</strong></span>
+          <span className={openPos.floating_profit >= 0 ? "pos" : "neg"}>{openPos.floating_profit}</span>
+        </div>
+      )}
+
+      <div className="tutor-titlebar">
+        <div className="tutor-name"><strong>{lessonSymbol}</strong><span>{lesson.name}</span></div>
+        {!live && (
+          <div className="tutor-controls">
+            <button onClick={() => step(-1)} title="Previous strategy">‹</button>
+            <button onClick={() => setPaused((p) => !p)} title={paused ? "Resume tour" : "Pause tour"}>
+              {paused ? "▶" : "❚❚"}
+            </button>
+            <button onClick={() => step(1)} title="Next strategy">›</button>
+            <span className="tutor-count">{(idx % order.length) + 1}/{order.length}</span>
+          </div>
+        )}
+      </div>
+      <LessonCard lesson={lesson} />
+    </section>
   );
 }
 
@@ -825,7 +923,10 @@ export default function Dashboard() {
                   <Countdown iso={status?.next_event_time ?? null} label={status?.next_event_type ?? null} />
                 </div>
               </section>
-              <section className="card explainer-section"><h3>SOUL EXPLAINER</h3><Terminal lines={lines} /></section>
+              <div className="overview-row">
+                <section className="card explainer-section"><h3>SOUL EXPLAINER</h3><Terminal lines={lines} /></section>
+                <StrategyTutor setups={setups} positions={positions} />
+              </div>
             </>
           )}
 

@@ -250,3 +250,45 @@ input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px #55B9FF1f; }
   border-radius: 4px; color: var(--purple); font-size: 10px; }
 .term .lvtext { color: var(--text); }
 .term .lv-skip .lvtext, .term .lv-info .lvtext, .term .lv-learn .lvtext { color: inherit; }
+
+/* ---- Overview: Soul Explainer + Strategy Tutor side by side ---- */
+.overview-row { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 1100px) { .overview-row { grid-template-columns: 1fr; } }
+.explainer-section { margin-bottom: 0; }
+
+/* ---- Strategy Tutor ---- */
+.tutor-section { min-width: 0; margin-bottom: 0; }
+.tutor-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.tutor-head h3 { margin: 0; }
+.tutor-state { font-size: 9px; font-weight: 700; letter-spacing: .1em; padding: 3px 9px; border-radius: 999px; text-transform: uppercase; border: 1px solid var(--line); color: var(--dim); }
+.tutor-state.tutor-open { color: #04140d; background: var(--green); border-color: var(--green); animation: pulse 1.4s infinite; }
+.tutor-state.tutor-signal { color: #04140d; background: var(--green); border-color: var(--green); }
+.tutor-state.tutor-near { color: #10233f; background: var(--blue); border-color: var(--blue); }
+.tutor-state.tutor-lesson { color: var(--purple); border-color: var(--purple); }
+.tutor-livebar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; margin-bottom: 8px;
+  background: #090f1b; border: 1px solid var(--line); border-radius: 6px; font-family: var(--mono); font-size: 11px; }
+.tutor-sym { color: var(--blue); font-weight: 700; }
+.tutor-score { color: var(--amber); }
+.tutor-dir.buy { color: var(--green); font-weight: 700; } .tutor-dir.sell { color: var(--crimson); font-weight: 700; }
+.tutor-reason { color: var(--dim); }
+.tutor-pos { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 7px 10px; margin-bottom: 8px;
+  background: #0d1526; border: 1px solid var(--line); border-radius: 6px; font-family: var(--mono); font-size: 11px; color: var(--dim); }
+.tutor-pos strong { color: var(--text); font-weight: 600; }
+.tutor-titlebar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 6px 0 8px; flex-wrap: wrap; }
+.tutor-name { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.tutor-name strong { color: var(--text); font-size: 14px; letter-spacing: .04em; }
+.tutor-name span { color: var(--purple); font-size: 11px; }
+.tutor-controls { display: flex; align-items: center; gap: 6px; }
+.tutor-controls button { width: 26px; height: 24px; border: 1px solid var(--line); border-radius: 6px; background: #0e1626;
+  color: var(--text); font-size: 11px; cursor: pointer; line-height: 1; }
+.tutor-controls button:hover { border-color: var(--blue); color: var(--blue); }
+.tutor-count { color: var(--dim); font-size: 10px; margin-left: 4px; font-family: var(--mono); }
+.lesson-body { font-size: 12px; line-height: 1.55; }
+.lesson-edge { color: var(--text); margin-bottom: 10px; padding-left: 10px; border-left: 2px solid var(--blue); }
+.lesson-block { margin-bottom: 8px; }
+.lesson-label { display: block; color: var(--amber); font-size: 9px; font-weight: 700; letter-spacing: .12em; margin-bottom: 4px; }
+.lesson-list { margin: 0; padding-left: 18px; color: var(--dim); }
+.lesson-list li { margin-bottom: 3px; }
+.lesson-row { display: flex; gap: 10px; padding: 5px 0; border-top: 1px solid #1a2540; color: var(--text); }
+.lesson-row .lesson-label { flex: 0 0 82px; margin: 0; }
+.lesson-row > span:last-child { color: var(--dim); flex: 1; }
