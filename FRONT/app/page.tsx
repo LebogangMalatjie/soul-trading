@@ -134,19 +134,58 @@ function LearningBar({ status }: { status: Status["ai_learning"] | undefined }) 
   );
 }
 
+const LEVELS = ["event", "signal", "skip", "learn", "risk", "close", "error", "info"] as const;
+
 function Terminal({ lines }: { lines: Line[] }) {
+  const [query, setQuery] = useState("");
+  const [active, setActive] = useState<Set<string>>(new Set());
+  const [follow, setFollow] = useState(true);
   const end = useRef<HTMLDivElement>(null);
-  useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [lines.length]);
+
+  const q = query.trim().toLowerCase();
+  const filtered = lines.filter((l) => {
+    if (active.size && !active.has(l.level)) return false;
+    if (q && !(`${l.text} ${l.symbol ?? ""} ${l.level}`.toLowerCase().includes(q))) return false;
+    return true;
+  });
+
+  useEffect(() => { if (follow) end.current?.scrollIntoView({ block: "end" }); }, [filtered.length, follow]);
+
+  const toggleLevel = (lv: string) =>
+    setActive((prev) => { const n = new Set(prev); n.has(lv) ? n.delete(lv) : n.add(lv); return n; });
+
   return (
-    <pre className="term">
-      {lines.length === 0 && <div className="dim">$ waiting for the engine to explain itself…</div>}
-      {lines.map((l) => (
-        <div key={l.id} className={`lv-${l.level}`}>
-          <span className="ts">{new Date(l.ts).toLocaleTimeString()}</span>{l.text}
+    <div className="explainer">
+      <div className="explainer-toolbar">
+        <input className="explainer-search" placeholder="Search the feed…" value={query}
+          onChange={(e) => setQuery(e.target.value)} aria-label="Search Soul Explainer" />
+        <div className="explainer-filters">
+          {LEVELS.map((lv) => (
+            <button key={lv} className={`lvchip lv-${lv} ${active.has(lv) ? "is-on" : ""}`}
+              onClick={() => toggleLevel(lv)} title={`Toggle ${lv}`}>{lv}</button>
+          ))}
+          {active.size > 0 && <button className="lvchip clear" onClick={() => setActive(new Set())}>clear</button>}
         </div>
-      ))}
-      <div ref={end} />
-    </pre>
+        <label className="explainer-follow">
+          <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} /> follow
+        </label>
+        <span className="explainer-count">{filtered.length}/{lines.length}</span>
+      </div>
+      <pre className="term">
+        {lines.length === 0 && <div className="dim">$ waiting for the engine to explain itself…</div>}
+        {lines.length > 0 && filtered.length === 0 &&
+          <div className="dim">$ no lines match the current filter.</div>}
+        {filtered.map((l) => (
+          <div key={l.id} className={`lv-${l.level}`}>
+            <span className="ts">{new Date(l.ts).toLocaleTimeString()}</span>
+            <span className={`lvtag lv-${l.level}`}>{l.level}</span>
+            {l.symbol && <span className="lvsym">{l.symbol}</span>}
+            <span className="lvtext">{l.text}</span>
+          </div>
+        ))}
+        <div ref={end} />
+      </pre>
+    </div>
   );
 }
 

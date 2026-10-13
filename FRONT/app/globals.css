@@ -225,3 +225,28 @@ input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px #55B9FF1f; }
 .tabbadge.alert { background: var(--crimson); color: #1a0a10; }
 .grid > .dashboard-left { grid-column: 1 / -1; }
 @media (max-width: 900px) { .tabbtn { flex: 1; justify-content: center; } }
+
+/* ---- Soul Explainer (filterable activity feed) ---- */
+.explainer { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.explainer-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.explainer-search { flex: 1 1 180px; min-width: 140px; padding: 7px 10px; border: 1px solid var(--line);
+  border-radius: 6px; background: #090f1b; color: var(--text); font-family: var(--mono); font-size: 12px; }
+.explainer-search:focus { outline: none; border-color: var(--blue); }
+.explainer-filters { display: flex; gap: 5px; flex-wrap: wrap; }
+.lvchip { padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px; background: #0e1626;
+  color: var(--dim); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; cursor: pointer; }
+.lvchip:hover { color: var(--text); }
+.lvchip.is-on { color: #04140d; background: var(--blue); border-color: var(--blue); }
+.lvchip.clear { border-style: dashed; }
+.explainer-follow { display: inline-flex; align-items: center; gap: 5px; color: var(--dim); font-size: 11px; cursor: pointer; }
+.explainer-count { color: var(--dim); font-size: 11px; margin-left: auto; }
+/* Level colors (line + tag + chip) */
+.lv-signal, .lv-close { color: var(--green); }
+.lv-error { color: var(--crimson); }
+.lv-info { color: var(--dim); }
+.term .lvtag { display: inline-block; min-width: 46px; margin-right: 8px; padding: 0 6px; border-radius: 4px;
+  background: #ffffff10; font-size: 9px; letter-spacing: .05em; text-transform: uppercase; text-align: center; }
+.term .lvsym { display: inline-block; margin-right: 8px; padding: 0 6px; border: 1px solid var(--line);
+  border-radius: 4px; color: var(--purple); font-size: 10px; }
+.term .lvtext { color: var(--text); }
+.term .lv-skip .lvtext, .term .lv-info .lvtext, .term .lv-learn .lvtext { color: inherit; }
