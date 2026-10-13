@@ -3087,20 +3087,6 @@ class TradingEngine:
         await self.db.close_trade(trade)
         s.open_trades.pop(pid, None)
         await self._notify_trade_closed(trade)
-
-    async def _notify_trade_closed(self, trade):
-        """Fire-and-forget Telegram card for a closed trade (never blocks/breaks)."""
-        try:
-            from notify import format_trade_closed, telegram
-            if not telegram.enabled:
-                return
-            text = format_trade_closed(
-                symbol=trade.symbol.value, side=trade.side.value, lots=trade.volume,
-                entry=trade.open_price, close=trade.close_price, profit=trade.profit,
-                reason=trade.close_reason or "")
-            await telegram.send(text)
-        except Exception:  # noqa: BLE001
-            log.exception("telegram trade-closed notify failed")
         s.finalize_attempts.pop(pid, None)
         if self.ai_meta is not None:
             try:
@@ -3121,6 +3107,20 @@ class TradingEngine:
                f"Closed {trade.symbol.value} ({trade.close_reason}): {trade.profit:+.2f}", trade.symbol.value)
         if trade.profit < 0 and trade.close_reason not in NO_REVIEW_REASONS:
             self._spawn(self.review_loss(s, trade))
+
+    async def _notify_trade_closed(self, trade):
+        """Fire-and-forget Telegram card for a closed trade (never blocks/breaks)."""
+        try:
+            from notify import format_trade_closed, telegram
+            if not telegram.enabled:
+                return
+            text = format_trade_closed(
+                symbol=trade.symbol.value, side=trade.side.value, lots=trade.volume,
+                entry=trade.open_price, close=trade.close_price, profit=trade.profit,
+                reason=trade.close_reason or "")
+            await telegram.send(text)
+        except Exception:  # noqa: BLE001
+            log.exception("telegram trade-closed notify failed")
 
     @staticmethod
     def _infer_reason(t: TradeLog) -> str:
