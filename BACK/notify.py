@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import httpx
@@ -104,8 +104,15 @@ def _fmt_price(value: Optional[float], digits: int = 5) -> str:
         return str(value)
 
 
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+def _sastnow() -> datetime:
+    """South African Standard Time = UTC+2 year-round (no daylight saving)."""
+    return datetime.now(timezone(timedelta(hours=2)))
+
+
+def _footer() -> str:
+    """Shared footer: SAST timestamp + creator credit."""
+    return (f"<i>🕐 {_sastnow().strftime('%Y-%m-%d %H:%M')} SAST</i>\n"
+            f"<i>Soul Trading · created by Lebogang Malatjie</i>")
 
 
 # Module-level singleton (lazy; safe to import anywhere).
@@ -131,7 +138,7 @@ def format_trade_opened(*, symbol: str, side: str, lots: float, entry: Optional[
         lines.append(f"🏷️ <b>Source:</b> {source}")
     if reason:
         lines += ["", f"💬 <b>Why:</b> {reason}"]
-    lines += ["", f"<i>Soul Trading · {_utcnow().strftime('%Y-%m-%d %H:%M UTC')}</i>"]
+    lines += ["", _footer()]
     return "\n".join(lines)
 
 
@@ -150,5 +157,5 @@ def format_trade_closed(*, symbol: str, side: str, lots: float, entry: Optional[
     ]
     if reason:
         lines += ["", f"💬 <b>Why closed:</b> {reason}"]
-    lines += ["", f"<i>Soul Trading · {_utcnow().strftime('%Y-%m-%d %H:%M UTC')}</i>"]
+    lines += ["", _footer()]
     return "\n".join(lines)
