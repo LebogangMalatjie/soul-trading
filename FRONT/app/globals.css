@@ -211,3 +211,17 @@ input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px #55B9FF1f; }
   animation: news-flash 1s infinite; }
 @keyframes news-flash { 0%, 100% { box-shadow: 0 0 0 #42F2B000; } 50% { box-shadow: 0 0 16px #42F2B0cc; } }
 @media (prefers-reduced-motion: reduce) { .btn.news-confirm { animation: none; } }
+
+/* ---- Dashboard tabs ---- */
+.tabbar { grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap; padding: 4px 2px; }
+.tabbtn { display: inline-flex; align-items: center; gap: 7px; padding: 8px 16px; border: 1px solid var(--line);
+  border-radius: 8px; background: #0e1626; color: var(--dim); font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; font-size: 11px; cursor: pointer; transition: all .15s ease; }
+.tabbtn:hover { color: var(--text); border-color: #3d5474; }
+.tabbtn.is-active { color: #04140d; background: var(--blue); border-color: var(--blue); box-shadow: 0 0 14px #55B9FF55; }
+.tabbadge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px;
+  padding: 0 5px; border-radius: 999px; background: #ffffff22; font-size: 10px; }
+.tabbtn.is-active .tabbadge { background: #00000033; }
+.tabbadge.alert { background: var(--crimson); color: #1a0a10; }
+.grid > .dashboard-left { grid-column: 1 / -1; }
+@media (max-width: 900px) { .tabbtn { flex: 1; justify-content: center; } }

@@ -216,6 +216,31 @@ function AccountCards({ account, error }: { account: AccountSummary | null; erro
   );
 }
 
+function TabBar({ tab, setTab, badges }: {
+  tab: "overview" | "trade" | "symbols" | "news";
+  setTab: (t: "overview" | "trade" | "symbols" | "news") => void;
+  badges: { trade?: number; news?: number };
+}) {
+  const tabs: { key: typeof tab; label: string; badge?: number; alert?: boolean }[] = [
+    { key: "overview", label: "Overview" },
+    { key: "trade", label: "Trade", badge: badges.trade },
+    { key: "symbols", label: "Symbols" },
+    { key: "news", label: "News", badge: badges.news, alert: (badges.news ?? 0) > 0 },
+  ];
+  return (
+    <nav className="tabbar" role="tablist">
+      {tabs.map((t) => (
+        <button key={t.key} role="tab" aria-selected={tab === t.key}
+          className={`tabbtn ${tab === t.key ? "is-active" : ""}`}
+          onClick={() => setTab(t.key)}>
+          {t.label}
+          {t.badge ? <span className={`tabbadge ${t.alert ? "alert" : ""}`}>{t.badge}</span> : null}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
 function NewsEventsPanel({ events, token, halted, onAction }: {
   events: NewsEvent[];
   token: string | null;
@@ -560,6 +585,7 @@ export default function Dashboard() {
   const [positionsError, setPositionsError] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
   const [newsEvents, setNewsEvents] = useState<NewsEvent[]>([]);
+  const [tab, setTab] = useState<"overview" | "trade" | "symbols" | "news">("overview");
   const lastId = useRef(0);
 
   useEffect(() => { setToken(sessionStorage.getItem("soul_token")); }, []);
@@ -749,61 +775,83 @@ export default function Dashboard() {
       {!token ? <Connect onToken={saveToken} /> : (
         <main className="grid">
           <AccountCards account={account} error={accountError} />
-          <section className="dashboard-left">
-            <LearningBar status={status?.ai_learning} />
-            <SymbolsPanel rows={symbolRows} currency={account?.currency ?? "USD"}
-              error={symbolError} onToggle={updateSymbol} />
-            <NewsEventsPanel events={newsEvents} token={token}
-              halted={Boolean(health && !health.auto_trading_enabled)} onAction={newsAction} />
-            <div className="card focus-section">
-              <h3>FOCUS</h3>
-              {focus.length ? <div className="focus-list" ref={focusRef}>
-                {focus.map((item) => <FocusCard key={item.symbol} setup={{
-                  ...item, pinned: item.pinned || pinned.includes(item.symbol),
-                }} position={positionFor(item)} onPin={togglePin} />)}
-              </div> : <div className="empty">No live setups. Watching {watchingCount} symbols.</div>}
-              {!hasLiveSetup && focus.length > 0 && <div className="empty">No live setups. Watching {watchingCount} symbols.</div>}
-              {pinError && <div className="err">{pinError}</div>}
-              {positionsError && <div className="dim">{positionsError}</div>}
-            </div>
-            {watching.length > 0 && <div className="card watch-section">
-              <h3>WATCHING ({watching.length})</h3>
-              {watching.map((item) => <WatchRow key={item.symbol} setup={{
-                ...item, pinned: item.pinned || pinned.includes(item.symbol),
-              }} onPin={togglePin} />)}
-            </div>}
-            <details className="card closed-section">
-              <summary>MARKET CLOSED ({closed.length})</summary>
-              {closed.map((item) => <WatchRow key={item.symbol} setup={{
-                ...item, pinned: item.pinned || pinned.includes(item.symbol),
-              }} onPin={togglePin} />)}
-            </details>
-            <div className="card"><h3>NEXT HIGH-IMPACT EVENT</h3>
-              <Countdown iso={status?.next_event_time ?? null} label={status?.next_event_type ?? null} />
-            </div>
-            <div className="card">
-              <h3>GOLD AND SILVER TRADING</h3>
-              <div className="dim">
-                Gold and silver are traded independently. Silver confirmation is not required for gold entries.
+          <TabBar tab={tab} setTab={setTab}
+            badges={{ trade: focus.length, news: newsEvents.length }} />
+
+          {tab === "overview" && (
+            <>
+              <section className="dashboard-left">
+                <LearningBar status={status?.ai_learning} />
+                <div className="card"><h3>NEXT HIGH-IMPACT EVENT</h3>
+                  <Countdown iso={status?.next_event_time ?? null} label={status?.next_event_type ?? null} />
+                </div>
+              </section>
+              <section className="card explainer-section"><h3>SOUL EXPLAINER</h3><Terminal lines={lines} /></section>
+            </>
+          )}
+
+          {tab === "trade" && (
+            <section className="dashboard-left">
+              <div className="card focus-section">
+                <h3>FOCUS</h3>
+                {focus.length ? <div className="focus-list" ref={focusRef}>
+                  {focus.map((item) => <FocusCard key={item.symbol} setup={{
+                    ...item, pinned: item.pinned || pinned.includes(item.symbol),
+                  }} position={positionFor(item)} onPin={togglePin} />)}
+                </div> : <div className="empty">No live setups. Watching {watchingCount} symbols.</div>}
+                {!hasLiveSetup && focus.length > 0 && <div className="empty">No live setups. Watching {watchingCount} symbols.</div>}
+                {pinError && <div className="err">{pinError}</div>}
+                {positionsError && <div className="dim">{positionsError}</div>}
               </div>
-            </div>
-            <div className="card">
-              <h3>ENGULFING STRATEGY</h3>
-              <label className="dim">
-                <input type="checkbox" checked={engulfingEnabled}
-                  onChange={(e) => void updateEngulfing({ engulfing_enabled: e.target.checked })} />
-                Enable Bullish/Bearish Engulfing
-              </label>
-              <label className="dim">
-                <input type="checkbox" checked={engulfingPaperMode}
-                  onChange={(e) => void updateEngulfing({ engulfing_paper_mode: e.target.checked })} />
-                Paper mode (signals only)
-              </label>
-              {!engulfingPaperMode && <div className="err">Live engulfing orders are enabled.</div>}
-              <div className="dim">Paper mode is on by default. Live entries use the bot’s existing broker order path.</div>
-            </div>
-          </section>
-          <section className="card explainer-section"><h3>SOUL EXPLAINER</h3><Terminal lines={lines} /></section>
+              {watching.length > 0 && <div className="card watch-section">
+                <h3>WATCHING ({watching.length})</h3>
+                {watching.map((item) => <WatchRow key={item.symbol} setup={{
+                  ...item, pinned: item.pinned || pinned.includes(item.symbol),
+                }} onPin={togglePin} />)}
+              </div>}
+              <details className="card closed-section">
+                <summary>MARKET CLOSED ({closed.length})</summary>
+                {closed.map((item) => <WatchRow key={item.symbol} setup={{
+                  ...item, pinned: item.pinned || pinned.includes(item.symbol),
+                }} onPin={togglePin} />)}
+              </details>
+              <div className="card">
+                <h3>ENGULFING STRATEGY</h3>
+                <label className="dim">
+                  <input type="checkbox" checked={engulfingEnabled}
+                    onChange={(e) => void updateEngulfing({ engulfing_enabled: e.target.checked })} />
+                  Enable Bullish/Bearish Engulfing
+                </label>
+                <label className="dim">
+                  <input type="checkbox" checked={engulfingPaperMode}
+                    onChange={(e) => void updateEngulfing({ engulfing_paper_mode: e.target.checked })} />
+                  Paper mode (signals only)
+                </label>
+                {!engulfingPaperMode && <div className="err">Live engulfing orders are enabled.</div>}
+                <div className="dim">Paper mode is on by default. Live entries use the bot’s existing broker order path.</div>
+              </div>
+            </section>
+          )}
+
+          {tab === "symbols" && (
+            <section className="dashboard-left">
+              <SymbolsPanel rows={symbolRows} currency={account?.currency ?? "USD"}
+                error={symbolError} onToggle={updateSymbol} />
+              <div className="card">
+                <h3>GOLD AND SILVER TRADING</h3>
+                <div className="dim">
+                  Gold and silver are traded independently. Silver confirmation is not required for gold entries.
+                </div>
+              </div>
+            </section>
+          )}
+
+          {tab === "news" && (
+            <section className="dashboard-left">
+              <NewsEventsPanel events={newsEvents} token={token}
+                halted={Boolean(health && !health.auto_trading_enabled)} onAction={newsAction} />
+            </section>
+          )}
         </main>
       )}
     </>
