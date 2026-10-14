@@ -44,6 +44,46 @@ class BiasFormulaTests(unittest.TestCase):
         self.assertEqual(r.direction, "SELL")
 
 
+class ConsensusPriorTests(unittest.TestCase):
+    """The consensus prior bridges split-news calls until real history exists."""
+
+    def _stats(self, n):
+        return ReactionStats(n, 0.0, 0.0, 0, 0, 0, 0)
+
+    def test_split_news_uses_prior_when_no_history(self):
+        # News neutral (score 0) + only 1 sample -> prior should lean SELL.
+        r = build_bias(event_key="CPI:1", event_type="CPI", symbol="XAUUSD",
+                       news_score=0.0, news_reasons=["split"], news_sources=["http://x"],
+                       stats=self._stats(1), min_probability_pct=55, min_history_sample=5,
+                       prior_direction="SELL", prior_strength=0.7,
+                       prior_reason="Consensus: hotter print expected.")
+        self.assertEqual(r.direction, "SELL")
+        self.assertGreaterEqual(r.probability_pct, 55)
+        self.assertTrue(any("Consensus" in x for x in r.reasons))
+        self.assertIn("prior(0.70)", r.formula)
+
+    def test_prior_retires_once_history_sufficient(self):
+        # With enough real history the prior is ignored; neutral news -> NO_TRADE.
+        r = build_bias(event_key="CPI:1", event_type="CPI", symbol="XAUUSD",
+                       news_score=0.0, news_reasons=["split"], news_sources=["http://x"],
+                       stats=self._stats(8), min_probability_pct=55, min_history_sample=5,
+                       prior_direction="SELL", prior_strength=0.7)
+        self.assertEqual(r.direction, "NO_TRADE")
+
+    def test_no_prior_leaves_split_news_as_no_trade(self):
+        # Backwards-compatible: no prior supplied -> identical to old behaviour.
+        r = build_bias(event_key="CPI:1", event_type="CPI", symbol="XAUUSD",
+                       news_score=0.0, news_reasons=["split"], news_sources=["http://x"],
+                       stats=self._stats(1), min_probability_pct=55, min_history_sample=5)
+        self.assertEqual(r.direction, "NO_TRADE")
+
+    def test_hotter_print_maps_to_expected_direction(self):
+        from news_bias.config import prior_polarity
+        # CPI hotter print -> gold DOWN (polarity -1).
+        self.assertEqual(prior_polarity("CPI", "XAUUSD"), -1)
+        self.assertIsNone(prior_polarity("CPI", "BTCUSD"))  # no prior defined
+
+
 class HistoryStatsTests(unittest.TestCase):
     def test_percentile_interpolates(self):
         self.assertEqual(_percentile([10, 20, 30, 40], 50), 25.0)

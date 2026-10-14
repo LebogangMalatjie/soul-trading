@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 
 from . import store
 from .bias import build_bias
-from .config import BiasEngineConfig, EVENT_SYMBOL_MAP
+from .config import BiasEngineConfig, EVENT_SYMBOL_MAP, prior_polarity
 from .gather import gather_context
 from .history import _percentile, compute_stats
 from .plan import BrokerFacts, build_plan
@@ -80,12 +80,46 @@ class NewsBiasEngine:
             if acquire is not None:
                 await self.db.pool.release(acquire)
 
+    def _consensus_prior(self, ev, symbol: str) -> tuple[str | None, str]:
+        """Resolve a consensus lean for ``symbol`` from forecast vs previous.
+
+        Uses the calendar's expected surprise (forecast - previous): a hotter
+        print (forecast > previous) is mapped through the per-symbol polarity in
+        ``config.DIRECTION_PRIOR`` to a BUY/SELL lean. Returns (direction, reason)
+        with direction None when there is no prior or no usable consensus.
+        """
+        pol = prior_polarity(ev.event_type, symbol)
+        if pol is None:
+            return None, ""
+        fc = getattr(ev, "forecast", None)
+        pv = getattr(ev, "previous", None)
+        if fc is None or pv is None:
+            return None, ""
+        try:
+            expected_surprise = float(fc) - float(pv)
+        except (TypeError, ValueError):
+            return None, ""
+        if expected_surprise == 0:
+            return None, ""
+        # expected_surprise > 0 => hotter print; multiply by polarity for the symbol.
+        direction = "BUY" if (expected_surprise > 0) == (pol > 0) else "SELL"
+        hotter = "hotter" if expected_surprise > 0 else "cooler"
+        reason = (f"Consensus prior: {ev.event_type} forecast {fc} vs previous {pv} "
+                  f"({hotter} print expected) historically leans {direction} for {symbol}.")
+        return direction, reason
+
     async def _bias_one(self, ev, symbol, gathered, con, session) -> None:
         stats_rows = []
         if con is not None:
             stats_rows = await store.history_rows(con, ev.event_type, symbol)
         stats = compute_stats(stats_rows)
         news_score = gathered.per_symbol_score.get(symbol, 0.0)
+
+        # Consensus prior from the expected surprise (forecast vs previous).
+        # Only meaningful pre-event; keys off the calendar's consensus, and is
+        # retired by build_bias once real history reaches min_history_sample.
+        prior_dir, prior_reason = self._consensus_prior(ev, symbol)
+
         result = build_bias(
             event_key=ev.key, event_type=ev.event_type, symbol=symbol,
             news_score=news_score,
@@ -95,6 +129,9 @@ class NewsBiasEngine:
             min_probability_pct=self.config.min_probability_pct,
             min_history_sample=self.config.min_history_sample,
             news_available=gathered.available,
+            prior_direction=prior_dir,
+            prior_strength=self.config.prior_strength if prior_dir else 0.0,
+            prior_reason=prior_reason,
         )
         if con is not None:
             await store.save_prediction(con, pred={

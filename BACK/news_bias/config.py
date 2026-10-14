@@ -29,6 +29,29 @@ KNOWN_EVENT_TYPES: tuple[str, ...] = (
     "CB_SPEECH", "GEOPOLITICAL",
 )
 
+# Consensus direction prior: how a HOTTER/higher-than-previous print moves each
+# symbol. +1 = hotter print pushes the symbol UP, -1 = pushes it DOWN, absent =
+# no prior. Used ONLY as a transparent lean when the news score is split AND we
+# do not yet have >= min_history_sample real reactions (it bridges the gap until
+# history can speak for itself, then retires automatically). Calibrated from the
+# 2026-10-14 CPI reaction (hot print -> strong USD -> gold/indices/EUR down).
+DIRECTION_PRIOR: dict[str, dict[str, int]] = {
+    "CPI":          {"XAUUSD": -1, "US30": -1, "EURUSD": -1},
+    "NFP":          {"XAUUSD": -1, "US30": 1,  "EURUSD": -1},
+    "PPI":          {"XAUUSD": -1, "EURUSD": -1},
+    "FOMC":         {"XAUUSD": -1, "US30": -1, "EURUSD": -1},
+    "RETAIL_SALES": {"EURUSD": -1, "US30": 1},
+    "GDP":          {"EURUSD": -1, "US30": 1},
+}
+
+
+def prior_polarity(event_type: str, symbol: str) -> int | None:
+    """How a hotter-than-previous print is expected to move ``symbol``.
+
+    Returns +1 (hotter -> symbol up), -1 (hotter -> symbol down) or None.
+    """
+    return DIRECTION_PRIOR.get(event_type, {}).get(symbol)
+
 
 @dataclass(frozen=True, slots=True)
 class SymbolBiasConfig:
@@ -58,6 +81,7 @@ class BiasEngineConfig:
     confirm_cutoff_seconds: int = 60      # no action by T-60s -> place nothing
     min_probability_pct: float = 55.0     # below this -> NO_TRADE
     min_history_sample: int = 5           # need >= this many past reactions to trust history
+    prior_strength: float = 0.7           # confidence weight of the consensus prior (0..1)
     context_lookback_hours: int = 72
     zar_fallback_rate: float = 18.0       # USD->ZAR fallback if MT5 USDZAR unavailable
     # After an event releases, record the real 1m/5m/15m reaction this many minutes later.
