@@ -64,6 +64,22 @@ export type NewsEvent = {
   symbols: NewsSymbolPlan[];
 };
 
+export type NewsHistoryRow = {
+  event_type: string;
+  event_time: string;
+  symbol: string;
+  direction: "BUY" | "SELL" | "NO_TRADE";
+  probability_pct: number;
+  actual_direction: string | null;
+  actual_move_points: number | null;
+  correct: boolean | null;
+};
+
+export type NewsHistory = {
+  accuracy: { correct: number; total: number; accuracy: number };
+  recent: NewsHistoryRow[];
+};
+
 export async function api<T>(path: string, o: Opts = {}): Promise<T> {
   const h: Record<string, string> = {};
   if (o.body) h["Content-Type"] = "application/json";

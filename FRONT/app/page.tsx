@@ -1,6 +1,6 @@
 "use client";
 import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ApiError, api, type NewsEvent, type NewsFeasibility, type SymbolRow } from "@/lib/api";
+import { ApiError, api, type NewsEvent, type NewsFeasibility, type NewsHistory, type SymbolRow } from "@/lib/api";
 import { LESSONS, type Lesson } from "@/lib/lessons";
 
 type Health = { ok: boolean; auto_trading_enabled: boolean; sessions: number };
@@ -476,6 +476,100 @@ function NewsEventsPanel({ events, token, halted, onAction }: {
           </article>
         );
       })}
+    </section>
+  );
+}
+
+function NewsHistoryCard({ token }: { token: string | null }) {
+  const [hist, setHist] = useState<NewsHistory | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    if (!token) { setHist(null); return; }
+    let alive = true;
+    const load = () => api<NewsHistory>("/api/v1/news-events/history", { token })
+      .then((h) => { if (alive) { setHist(h); setError(""); } })
+      .catch((e: unknown) => {
+        if (!alive) return;
+        setError(e instanceof ApiError ? e.message : String(e));
+      });
+    load();
+    const t = setInterval(load, 30000);
+    return () => { alive = false; clearInterval(t); };
+  }, [token]);
+
+  const acc = hist?.accuracy ?? { correct: 0, total: 0, accuracy: 0 };
+  const accPct = acc.total ? Math.round(acc.accuracy * 100) : 0;
+  const when = (iso: string) => {
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? iso
+      : d.toLocaleString(undefined, {
+          day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
+          timeZone: "Africa/Johannesburg", timeZoneName: "short",
+        });
+  };
+  const dirBadge = (dir: NewsHistory["recent"][number]["direction"]) =>
+    dir === "BUY" ? "state-signal" : dir === "SELL" ? "state-near" : "state-closed";
+
+  return (
+    <section className="card news-card">
+      <div className="symbols-heading">
+        <h3>EVENT HISTORY</h3>
+        <span className="badge state-watching">
+          ACCURACY {acc.correct}/{acc.total}{acc.total ? ` · ${accPct}%` : ""}
+        </span>
+      </div>
+      {error && <div className="err">{error}</div>}
+      {!hist && !error && <div className="empty">Loading prediction history…</div>}
+      {hist && hist.recent.length === 0 && (
+        <div className="empty">
+          No event predictions logged yet. Each high-impact call is recorded here and scored
+          once the event passes, so this card becomes the running accuracy of the bias engine.
+        </div>
+      )}
+      {hist && hist.recent.length > 0 && (
+        <div className="news-event hist-list">
+          <div className="hist-row hist-head">
+            <span>EVENT</span><span>CALL</span><span>WHAT HAPPENED</span>
+          </div>
+          {hist.recent.map((r, i) => (
+            <div className="hist-row" key={`${r.event_type}-${r.event_time}-${r.symbol}-${i}`}>
+              <span className="hist-ev">
+                <strong>{r.event_type}</strong>
+                <span className="dim">{r.symbol}</span>
+                <small className="dim">{when(r.event_time)}</small>
+              </span>
+              <span className="hist-call">
+                <span className={`badge ${dirBadge(r.direction)}`}>{r.direction}</span>
+                <span className="dim">{Math.round(r.probability_pct)}%</span>
+              </span>
+              <span className="hist-res">
+                {r.actual_direction === null || r.actual_direction === undefined ? (
+                  <span className="dim">awaiting outcome</span>
+                ) : (
+                  <>
+                    <span className={`hist-move ${
+                      r.actual_direction === "BUY" ? "up" :
+                      r.actual_direction === "SELL" ? "down" : "flat"}`}>
+                      {r.actual_direction === "BUY" ? "▲ up"
+                        : r.actual_direction === "SELL" ? "▼ down" : "● flat"}
+                      {r.actual_move_points != null
+                        ? ` ${Math.round(r.actual_move_points)} pts` : ""}
+                    </span>
+                    {r.correct === true && <span className="hist-win"> ✓</span>}
+                    {r.correct === false && <span className="hist-loss"> ✕</span>}
+                    {r.correct === null && r.direction === "NO_TRADE" &&
+                      <span className="dim"> no trade</span>}
+                  </>
+                )}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="dim hist-note">
+        Bias engine accuracy is separate from the AI learning bar. Outcomes are scored only for
+        directional (BUY/SELL) calls that had a confirmed plan.
+      </div>
     </section>
   );
 }
@@ -988,6 +1082,7 @@ export default function Dashboard() {
 
           {tab === "news" && (
             <section className="dashboard-left">
+              <NewsHistoryCard token={token} />
               <NewsEventsPanel events={newsEvents} token={token}
                 halted={Boolean(health && !health.auto_trading_enabled)} onAction={newsAction} />
             </section>

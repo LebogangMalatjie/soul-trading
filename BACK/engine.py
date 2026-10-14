@@ -1953,6 +1953,12 @@ class TradingEngine:
                 self.scheduler.add_job(self._news_bias_lock, "date", run_date=sched.lock_time,
                                        args=[ev], id=f"nb:lock:{ev.key}", replace_existing=True,
                                        misfire_grace_time=120)
+            # Post-event outcome capture: record the real 1m reaction for accuracy.
+            outcome_at = ev.time + timedelta(minutes=self.news_bias.config.outcome_capture_minutes)
+            if outcome_at > now:
+                self.scheduler.add_job(self._news_bias_outcome, "date", run_date=outcome_at,
+                                       args=[ev], id=f"nb:outcome:{ev.key}", replace_existing=True,
+                                       misfire_grace_time=1800)
 
     async def _news_bias_regen(self, ev) -> None:
         if self.news_bias is None:
@@ -1965,6 +1971,32 @@ class TradingEngine:
     async def _news_bias_lock(self, ev) -> None:
         """At lock (T-5): final regen; plans await confirm. Places nothing by itself."""
         await self._news_bias_regen(ev)
+
+    async def _news_bias_outcome(self, ev) -> None:
+        """Record the real post-release reaction (1m/5m/15m) for accuracy."""
+        if self.news_bias is None:
+            return
+        try:
+            await self.news_bias.record_outcomes(ev)
+        except Exception:  # noqa: BLE001
+            log.exception("news-bias outcome capture failed for %s", getattr(ev, "key", ev))
+
+    def _maybe_sweep_outcomes(self) -> None:
+        """Throttled catch-up sweep for events released while the bot was offline.
+
+        Runs in the background (never blocks the tick) at most every 3 minutes so
+        an event that passed before a session connected still gets scored once a
+        broker is available.
+        """
+        if self.news_bias is None or not self.news_bias.config.enabled:
+            return
+        if time.monotonic() < getattr(self, "_nb_sweep_at", 0.0):
+            return
+        self._nb_sweep_at = time.monotonic() + 180.0
+        try:
+            self._spawn(self.news_bias.capture_missing_outcomes(utcnow()))
+        except Exception:  # noqa: BLE001
+            pass
 
     def _spawn(self, coro) -> None:
         t = asyncio.create_task(coro)
@@ -2036,6 +2068,7 @@ class TradingEngine:
             await self._evaluate(s)
             if self.news_bias is not None and self.news_bias.config.enabled:
                 await self.news_bias.monitor_all()
+                self._maybe_sweep_outcomes()
         except Exception:  # noqa: BLE001
             log.exception("tick failed for %s", user_id)
 

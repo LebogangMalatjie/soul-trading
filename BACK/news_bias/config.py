@@ -60,6 +60,10 @@ class BiasEngineConfig:
     min_history_sample: int = 5           # need >= this many past reactions to trust history
     context_lookback_hours: int = 72
     zar_fallback_rate: float = 18.0       # USD->ZAR fallback if MT5 USDZAR unavailable
+    # After an event releases, record the real 1m/5m/15m reaction this many minutes later.
+    outcome_capture_minutes: int = 16
+    # Catch-up window: on connect/refresh, capture outcomes for events the bot missed.
+    outcome_sweep_hours: int = 12
     per_symbol: dict[str, SymbolBiasConfig] = field(default_factory=dict)
 
     def for_symbol(self, symbol: str) -> SymbolBiasConfig:

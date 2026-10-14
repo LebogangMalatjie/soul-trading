@@ -303,6 +303,124 @@ class NewsBiasEngine:
                     self._logf("news-bias monitor failed %s %s: %r", event_key, symbol, exc)
                     continue
 
+    # -- post-event outcome capture ---------------------------------------- #
+    async def record_outcomes(self, ev) -> None:
+        """Record the real 1m/5m/15m reaction for each symbol after an event released.
+
+        Scheduled at T + ``outcome_capture_minutes`` so the first M1 candle after
+        the release has closed. Writes the actual direction/move back to the
+        prediction (and to event_history) so the accuracy card reflects reality.
+        """
+        if not self.config.enabled:
+            return
+        symbols = EVENT_SYMBOL_MAP.get(ev.event_type, ())
+        if not symbols:
+            return
+        session = self._get_session()
+        if session is None:
+            self._logf("news-bias outcome: no session yet for %s", ev.key)
+            return
+        acquire = await self.db.pool.acquire() if self.db and self.db.pool else None
+        con = acquire
+        try:
+            for symbol in symbols:
+                try:
+                    await self._record_one(ev, symbol, session, con)
+                except Exception as exc:  # noqa: BLE001 - one symbol never blocks others
+                    self._logf("news-bias outcome failed %s %s: %r", ev.key, symbol, exc)
+                    continue
+        finally:
+            if acquire is not None:
+                await self.db.pool.release(acquire)
+
+    async def capture_missing_outcomes(self, now) -> None:
+        """DB-driven catch-up: score recent events the bot missed while offline.
+
+        Needs no live calendar entry, so an event that released before a session
+        connected still gets scored from historical candles once a broker is up.
+        Idempotent: only predictions with ``correct IS NULL`` are revisited.
+        """
+        if not self.config.enabled or not (self.db and self.db.pool):
+            return
+        session = self._get_session()
+        if session is None:
+            return
+        from datetime import timedelta
+        since = now - timedelta(hours=self.config.outcome_sweep_hours)
+        acquire = await self.db.pool.acquire()
+        try:
+            rows = await store.recent_unscored(acquire, since)
+        finally:
+            await self.db.pool.release(acquire)
+        for r in rows:
+            key, symbol = r.get("event_key"), r.get("symbol")
+            if not key or not symbol:
+                continue
+            try:
+                await self._record_one(_RowEvent(r), symbol, session, None)
+            except Exception as exc:  # noqa: BLE001
+                self._logf("news-bias sweep failed %s %s: %r", key, symbol, exc)
+                continue
+
+    async def _record_one(self, ev, symbol, session, con) -> None:
+        broker = session.broker
+        broker_symbol = session.config.broker_symbol(symbol)
+        from engine import Timeframe
+        t0 = ev.time
+        m1 = _first_at_or_after(await broker.candles(broker_symbol, Timeframe.M1, 180), t0)
+        if m1 is None:
+            self._logf("news-bias outcome: no M1 candle for %s %s yet", ev.key, symbol)
+            return
+        try:
+            spec = await broker.symbol_spec(broker_symbol)
+            point = spec.point if spec.point > 0 else 10 ** (-spec.digits)
+        except Exception:  # noqa: BLE001
+            point = 0.0
+
+        def pts(delta: float) -> float:
+            return (delta / point) if point else 0.0
+
+        d1 = _dir_of(m1)
+        first_points = pts(m1.close - m1.open)
+        fakeout = 0.0
+        if d1 == "BUY":
+            fakeout = pts(m1.open - m1.low)
+        elif d1 == "SELL":
+            fakeout = pts(m1.high - m1.open)
+
+        d5 = pts5 = d15 = pts15 = None
+        try:
+            c5 = _first_at_or_after(await broker.candles(broker_symbol, Timeframe.M5, 60), t0)
+            if c5 is not None:
+                d5, pts5 = _dir_of(c5), pts(c5.close - c5.open)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            c15 = _first_at_or_after(await broker.candles(broker_symbol, Timeframe.M15, 60), t0)
+            if c15 is not None:
+                d15, pts15 = _dir_of(c15), pts(c15.close - c15.open)
+        except Exception:  # noqa: BLE001
+            pass
+
+        release_conn = False
+        if con is None and self.db and self.db.pool:
+            con = await self.db.pool.acquire()
+            release_conn = True
+        try:
+            if con is not None:
+                await store.record_reaction(
+                    con, event_key=ev.key, event_type=ev.event_type, event_time=ev.time,
+                    symbol=symbol, first_1m_dir=d1, first_1m_points=first_points,
+                    m5_dir=d5, m5_points=pts5, m15_dir=d15, m15_points=pts15,
+                    fakeout_points=fakeout)
+        finally:
+            if release_conn:
+                await self.db.pool.release(con)
+
+        arrow = "UP" if d1 == "BUY" else "DOWN" if d1 == "SELL" else "FLAT"
+        self._note("event", f"{ev.event_type} released · {symbol} 1m {arrow} "
+                            f"{first_points:+.0f} pts", symbol)
+
 
 class _NullConn:
     """Stand-in when the DB is offline; store calls that need it are guarded."""
@@ -322,6 +440,37 @@ def _as_dt(value):
     if isinstance(value, _dt):
         return value
     return None
+
+
+class _RowEvent:
+    """Tiny adapter so a DB prediction row can drive ``_record_one`` like a CalendarEvent."""
+
+    __slots__ = ("key", "event_type", "time")
+
+    def __init__(self, r: dict):
+        self.key = r["event_key"]
+        self.event_type = r["event_type"]
+        self.time = r["event_time"]
+
+
+def _dir_of(c) -> str:
+    if c.close > c.open:
+        return "BUY"
+    if c.close < c.open:
+        return "SELL"
+    return "FLAT"
+
+
+def _first_at_or_after(candles, t0):
+    """Earliest candle whose UTC open time is at/after ``t0`` (the release minute)."""
+    best = None
+    for c in candles:
+        ct = c.time
+        if ct.tzinfo is None:
+            ct = ct.replace(tzinfo=timezone.utc)
+        if ct >= t0 and (best is None or ct < best.time):
+            best = c
+    return best
 
 
 # -- module-level singleton used by the engine ----------------------------

@@ -486,10 +486,17 @@ async def news_events_history(s: UserSession = Depends(current_user),
     async with engine.db.pool.acquire() as con:
         accuracy = await store.prediction_accuracy(con)
         rows = await con.fetch(
-            """SELECT event_type, event_time, symbol, direction, probability_pct,
-                      actual_direction, correct
-               FROM event_predictions WHERE correct IS NOT NULL
-               ORDER BY event_time DESC LIMIT 25""")
+            """SELECT t.event_type, t.event_time, t.symbol, t.direction,
+                      t.probability_pct, t.actual_direction, t.actual_move_points, t.correct
+                 FROM (
+                   SELECT DISTINCT ON (event_key, symbol)
+                          event_type, event_time, symbol, direction, probability_pct,
+                          actual_direction, actual_move_points, correct
+                     FROM event_predictions
+                    ORDER BY event_key, symbol, generated_at DESC
+                 ) t
+                ORDER BY t.event_time DESC
+                LIMIT 30""")
     return {"accuracy": accuracy,
             "recent": [dict(r) for r in rows]}
 

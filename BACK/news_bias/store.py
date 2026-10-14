@@ -123,6 +123,55 @@ async def history_rows(con, event_type: str, symbol: str, limit: int = 200) -> l
     return [dict(r) for r in rows]
 
 
+async def recent_unscored(con, since, limit: int = 200) -> list[dict]:
+    """Recent predictions still missing their post-event outcome.
+
+    Used by the catch-up sweep so events that released while the bot was offline
+    (or before a session connected) still get scored from historical candles.
+    Returns one row per (event_key, symbol) that has ``correct IS NULL``.
+    """
+    rows = await con.fetch(
+        """SELECT DISTINCT ON (event_key, symbol)
+                  event_key, event_type, event_time, symbol, direction
+           FROM event_predictions
+           WHERE correct IS NULL AND event_time >= $1
+           ORDER BY event_key, symbol, generated_at DESC
+           LIMIT $2""", since, limit)
+    return [dict(r) for r in rows]
+
+
+async def record_reaction(con, *, event_key: str, event_type: str, event_time, symbol: str,
+                          first_1m_dir: str, first_1m_points: float,
+                          m5_dir=None, m5_points=None, m15_dir=None, m15_points=None,
+                          fakeout_points=None, spread_points=None, surprise=None) -> None:
+    """Store what the market actually did after ``event_time`` (the release).
+
+    Two writes, both idempotent:
+      * ``event_predictions`` gets the real first-candle direction + move, and
+        ``correct`` is set ONLY for directional (BUY/SELL) calls whose direction
+        matched that candle. NO_TRADE calls and flat candles stay NULL so they
+        never inflate the accuracy score.
+      * ``event_history`` gets the 1m/5m/15m reaction so future bias has samples.
+    """
+    await con.execute(
+        """UPDATE event_predictions
+              SET actual_direction=$3, actual_move_points=$4,
+                  correct = CASE
+                    WHEN direction IN ('BUY','SELL') AND $3 IN ('BUY','SELL')
+                      THEN (direction = $3)
+                    ELSE NULL END
+            WHERE event_key=$1 AND symbol=$2 AND correct IS NULL""",
+        event_key, symbol, first_1m_dir, float(first_1m_points))
+    await upsert_history(con, row={
+        "event_type": event_type, "event_time": event_time, "symbol": symbol,
+        "surprise": surprise, "first_1m_dir": first_1m_dir,
+        "first_1m_points": float(first_1m_points),
+        "m5_dir": m5_dir, "m5_points": m5_points,
+        "m15_dir": m15_dir, "m15_points": m15_points,
+        "fakeout_points": fakeout_points, "spread_points": spread_points or 0.0,
+    })
+
+
 # -- plans -----------------------------------------------------------------
 async def create_plan(con, *, plan: dict) -> int:
     row = await con.fetchrow(
