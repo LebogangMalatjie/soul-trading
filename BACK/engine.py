@@ -3327,5 +3327,57 @@ class TradingEngine:
         except Exception:  # noqa: BLE001
             log.exception("telegram shutdown notify failed")
 
+    async def close_all_positions(self) -> ShutdownResponse:
+        """Market-close every open position on every session without disabling auto-trading.
+
+        One-click "flat" button: closes positions but leaves auto-trading enabled,
+        unlike emergency_shutdown which flips the kill switch.
+        """
+        async with self._shutdown_lock:
+            sessions = list(self.sessions.values())
+            closed_ids: set[tuple[str, str]] = set()
+            failed: dict[tuple[str, str], str] = {}
+
+            async def close_one(s: UserSession, pid: str) -> None:
+                if await self._safe_close(s, pid, "manual_close_all"):
+                    closed_ids.add((s.user_id, pid))
+                    failed.pop((s.user_id, pid), None)
+                else:
+                    failed[(s.user_id, pid)] = f"{s.user_id}:{pid}"
+
+            for attempt in range(3):  # sweep repeatedly to catch orders that were in flight
+                async def sweep(s: UserSession) -> None:
+                    try:
+                        positions = await s.broker.positions()
+                    except BrokerError as e:
+                        failed[(s.user_id, "*")] = f"{s.user_id}:positions-unavailable ({e})"
+                        return
+                    failed.pop((s.user_id, "*"), None)
+                    await asyncio.gather(*(close_one(s, str(p["id"])) for p in positions))
+
+                await asyncio.gather(*(sweep(s) for s in sessions), return_exceptions=True)
+                remaining = 0
+                for s in sessions:
+                    try:
+                        remaining += len(await s.broker.positions())
+                    except BrokerError:
+                        remaining += 1
+                if remaining == 0:
+                    break
+                await asyncio.sleep(1.0 + attempt)
+
+            flat = True
+            for s in sessions:
+                try:
+                    flat &= not await s.broker.positions()
+                    await self._sync_positions(s)
+                except Exception:  # noqa: BLE001
+                    flat = False
+            log.info("CLOSE ALL POSITIONS: closed=%d failed=%d flat=%s", len(closed_ids), len(failed), flat)
+            return ShutdownResponse(
+                auto_trading_enabled=is_auto_trading_enabled(), sessions_processed=len(sessions),
+                positions_closed=len(closed_ids), positions_failed=sorted(failed.values()),
+                fully_flat=flat and not failed, triggered_at=utcnow())
+
     def resume_trading(self) -> None:
         set_auto_trading(True)

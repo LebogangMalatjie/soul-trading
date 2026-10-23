@@ -39,9 +39,9 @@ function usePoll(fn: () => void | Promise<void>, ms: number) {
   useEffect(() => { ref.current(); const t = setInterval(() => ref.current(), ms); return () => clearInterval(t); }, [ms]);
 }
 
-function TopBar({ health, refresh, connected, session, onDisconnect }: {
+function TopBar({ health, refresh, connected, session, token, onDisconnect }: {
   health: Health | null; refresh: () => void; connected: boolean; session: string | null;
-  onDisconnect: () => void;
+  token: string | null; onDisconnect: () => void;
 }) {
   const [key, setKey] = useState(""); const [busy, setBusy] = useState(false); const [msg, setMsg] = useState("");
   const killed = health && !health.auto_trading_enabled;
@@ -51,6 +51,16 @@ function TopBar({ health, refresh, connected, session, onDisconnect }: {
     try {
       const r = await api<{ positions_closed?: number; fully_flat?: boolean }>(path, { method: "POST", key });
       setMsg(r.positions_closed !== undefined ? `closed ${r.positions_closed} · ${r.fully_flat ? "flat" : "NOT FLAT - check broker"}` : "re-armed");
+      refresh();
+    } catch (e) { setMsg((e as Error).message); } finally { setBusy(false); }
+  };
+  const closeAll = async () => {
+    if (!token || !confirm("Close ALL open positions on every session now?")) return;
+    setBusy(true); setMsg("");
+    try {
+      const r = await api<{ positions_closed?: number; fully_flat?: boolean }>(
+        "/api/v1/bot/close-all-positions", { method: "POST", token });
+      setMsg(r.positions_closed !== undefined ? `closed ${r.positions_closed} · ${r.fully_flat ? "flat" : "NOT FLAT - check broker"}` : "done");
       refresh();
     } catch (e) { setMsg((e as Error).message); } finally { setBusy(false); }
   };
@@ -66,6 +76,7 @@ function TopBar({ health, refresh, connected, session, onDisconnect }: {
         {killed
           ? <button className="btn go" disabled={busy || !key} onClick={() => run("/api/v1/system/resume", "Re-arm auto-trading?")}>RE-ARM</button>
           : <button className="btn danger" disabled={busy || !key} onClick={() => run("/api/v1/system/emergency-shutdown", "Disable auto-trading and CLOSE ALL open trades now?")}>EMERGENCY SHUTDOWN</button>}
+        {connected && <button className="btn warn" disabled={busy} onClick={closeAll}>CLOSE ALL TRADES</button>}
         <span className="dim">{msg}</span>
       </div>
     </header>
@@ -1002,7 +1013,7 @@ export default function Dashboard() {
   return (
     <>
       <TopBar health={health} refresh={pollHealth} connected={Boolean(token)}
-        session={status?.current_session ?? null} onDisconnect={() => saveToken(null)} />
+        session={status?.current_session ?? null} token={token} onDisconnect={() => saveToken(null)} />
       {!token ? <Connect onToken={saveToken} /> : (
         <main className="grid">
           <AccountCards account={account} error={accountError} />

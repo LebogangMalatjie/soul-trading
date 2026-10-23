@@ -516,6 +516,17 @@ async def emergency_shutdown(
     return await engine.emergency_shutdown()
 
 
+@app.post("/api/v1/bot/close-all-positions", response_model=ShutdownResponse)
+async def close_all_positions(
+    engine: TradingEngine = Depends(get_engine),
+    s: UserSession = Depends(current_user),
+) -> ShutdownResponse:
+    """Market-close ALL open positions on every session. No shutdown key required;
+    does NOT disable auto-trading (unlike emergency-shutdown)."""
+    log.warning("CLOSE ALL POSITIONS requested by %s", s.user_id)
+    return await engine.close_all_positions()
+
+
 @app.post("/api/v1/system/resume")
 async def resume(
     engine: TradingEngine = Depends(get_engine),

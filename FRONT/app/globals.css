@@ -23,6 +23,8 @@ input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px #55B9FF1f; }
 .btn:hover { border-color: var(--blue); background: #1b2b45; box-shadow: 0 0 14px #55B9FF25; } .btn:disabled { opacity: .4; cursor: not-allowed; }
 .btn.danger { color: var(--crimson); border-color: var(--crimson); } .btn.danger:hover { box-shadow: 0 0 12px #FF2E6355; }
 .btn.go { color: var(--green); border-color: var(--green); }
+.btn.warn { color: var(--amber); border-color: var(--amber); }
+.btn.warn:hover { box-shadow: 0 0 12px #F5A62355; }
 .btn.disconnect { color: #E0C8FF; border-color: var(--purple); background: #B58CFF20; font-weight: 700; letter-spacing: .06em; }
 .btn.disconnect:hover { background: #B58CFF35; box-shadow: 0 0 14px #B58CFF35; }
 .session-indicator { display: inline-flex; align-items: center; gap: 7px; padding: 7px 10px;
