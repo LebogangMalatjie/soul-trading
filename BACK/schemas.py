@@ -63,6 +63,11 @@ class EventType(str, Enum):
     CPI = "CPI"
     PPI = "PPI"
     FOMC = "FOMC"
+    GDP = "GDP"
+    RETAIL_SALES = "RETAIL_SALES"
+    JOBLESS_CLAIMS = "JOBLESS_CLAIMS"
+    CB_SPEECH = "CB_SPEECH"
+    GEOPOLITICAL = "GEOPOLITICAL"
 
 
 class TradeSource(str, Enum):

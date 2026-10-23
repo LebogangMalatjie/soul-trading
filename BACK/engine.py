@@ -1304,12 +1304,22 @@ EVENT_PATTERNS = {
     EventType.CPI: re.compile(r"\bcpi\b", re.I),
     EventType.PPI: re.compile(r"\bppi\b", re.I),
     EventType.FOMC: re.compile(r"federal funds rate|fomc statement", re.I),
+    EventType.GDP: re.compile(r"\bgdp\b|gross domestic product", re.I),
+    EventType.RETAIL_SALES: re.compile(r"retail sales", re.I),
+    EventType.JOBLESS_CLAIMS: re.compile(r"jobless claims|unemployment claims|initial claims", re.I),
+    EventType.CB_SPEECH: re.compile(r"\bspeaks\b|\bspeech\b|\btestifies\b|press conference", re.I),
+    EventType.GEOPOLITICAL: re.compile(r"\bwar\b|\bstrike\b|\binvasion\b|\bsanctions\b|\bmissile\b|\bceasefire\b", re.I),
 }
 EVENT_QUERIES = {
     EventType.NFP: "nonfarm payrolls jobs report",
     EventType.CPI: "US CPI inflation",
     EventType.PPI: "US PPI producer prices",
     EventType.FOMC: "Fed FOMC interest rate decision",
+    EventType.GDP: "US GDP gross domestic product",
+    EventType.RETAIL_SALES: "US retail sales",
+    EventType.JOBLESS_CLAIMS: "US jobless claims unemployment",
+    EventType.CB_SPEECH: "Fed speaks speech press conference",
+    EventType.GEOPOLITICAL: "geopolitical war strike sanctions",
 }
 SYMBOL_QUERIES = {
     Symbol.XAUUSD: "gold price OR dollar OR Fed",
